@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="SpriteFrames" path="res://assets/sprites/script_drone.tres" id="2_script_drone"]
+[ext_resource type="SpriteFrames" path="res://assets/sprites/enemy_drone.tres" id="3_enemy_drone"]
+[ext_resource type="Texture2D" path="res://assets/tilesets/structure_tileset.png" id="4_tileset"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 320.0
+offset_bottom = 180.0
+color = Color(0.05, 0.058, 0.086, 1)
+
+[node name="GeneratedDrone" type="AnimatedSprite2D" parent="."]
+position = Vector2(56, 96)
+sprite_frames = ExtResource("2_script_drone")
+animation = &"hover"
+
+[node name="EnemyDrone" type="AnimatedSprite2D" parent="."]
+position = Vector2(136, 96)
+sprite_frames = ExtResource("3_enemy_drone")
+animation = &"idle"
+
+[node name="Tileset" type="Sprite2D" parent="."]
+position = Vector2(248, 90)
+texture = ExtResource("4_tileset")
