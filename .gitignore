@@ -19,3 +19,6 @@ build/
 
 # Claude Code の作業用ディレクトリ
 .claude/.cc-writes/
+
+# dev-skills のスクリプト実行で生成される
+.claude/skills/**/__pycache__/
