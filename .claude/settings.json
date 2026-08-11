@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(godot:*)",
+      "Bash(/opt/homebrew/bin/godot:*)"
+    ]
+  }
+}
