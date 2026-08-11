@@ -28,18 +28,20 @@
     _Boundary: FetchScript_
     - 対象ファイル: `scripts/fetch_gdunit4.sh`(新規)
     - 仕様参照: spec.md §5.1、§6.1
-    - 検証コマンド: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); rm -rf addons/gdUnit4 && ./scripts/fetch_gdunit4.sh && grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo OK`(取得と照合)、`./scripts/fetch_gdunit4.sh | grep -qi 'skip\|一致' && echo OK`(2 回目はダウンロードしないことを標準出力で二値判定する。出力する語は実装時に決め、この検証コマンドを合わせる)
-  - [ ] 1.2 (P) 取得スクリプトの異常系を実装する。必要なコマンドの不足・ダウンロードの失敗・展開後の版の不一致・版が異なる既存ディレクトリの置き換え
+    - 検証コマンド: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); rm -rf addons/gdUnit4 && ./scripts/fetch_gdunit4.sh && grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo OK`(取得と照合)、`./scripts/fetch_gdunit4.sh | grep -q 'skipped' && echo OK`(2 回目はダウンロードしないこと。**標準出力に `skipped` と版を出す**ことをこのタスクの実装内容に含める)
+  - [ ] 1.2 取得スクリプトの異常系を実装する。必要なコマンドの不足・ダウンロードの失敗・展開後の版の不一致・版が異なる既存ディレクトリの置き換え
     _Requirements: 1.4, 1.5, 1.6, 1.7_
     _Boundary: FetchScript_
     _Depends: 1.1_
     - 対象ファイル: `scripts/fetch_gdunit4.sh`(変更)
     - 仕様参照: spec.md §5.1 のエラー表と「既存ディレクトリの置き換え」
-    - 検証コマンド(4 本。異常系ごとに 1 本ずつ):
-      - 1.4: `sed -i.bak 's/version="[^"]*"/version="0.0.0"/' addons/gdUnit4/plugin.cfg && ./scripts/fetch_gdunit4.sh && grep -qv 'version="0.0.0"' addons/gdUnit4/plugin.cfg && echo OK`
-      - 1.5: `GDUNIT4_EXPECT_OVERRIDE=99.99.99 ./scripts/fetch_gdunit4.sh 2>&1 >/dev/null | grep -q '99.99.99' ; test ${PIPESTATUS[0]} -eq 1 && echo OK`(照合に失敗させるための上書き変数を実装に設ける。期待値と実際の値の両方が標準エラーに出ることを確認する)
-      - 1.6: `E=$(mktemp -d); PATH=$E ./scripts/fetch_gdunit4.sh 2>&1 >/dev/null | grep -q 'curl\|unzip'; test $? -eq 0 && echo OK`(実在コマンドを含まない PATH で実行し、不足しているコマンド名が標準エラーに出て終了コードが 1 になること)
-      - 1.7: `GDUNIT4_VERSION_OVERRIDE=0.0.0-does-not-exist ./scripts/fetch_gdunit4.sh 2>&1 >/dev/null | grep -q 'http'; test ${PIPESTATUS[0]} -eq 1 && echo OK`(存在しないタグを指定して URL と HTTP ステータスが標準エラーに出ること)
+    - 検証コマンド(4 本。**bash で実行する**。異常系ごとに 1 本ずつ。spec.md §5.1 は取得スクリプトの入力を「なし」と定めているため、検証用の環境変数を実装に足さず、スクリプトを一時的に書き換えて異常系を起こし、確認後に復元する):
+      - 1.4: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); sed -i.bak 's/^version=.*/version="0.0.0"/' addons/gdUnit4/plugin.cfg; ./scripts/fetch_gdunit4.sh; grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo OK`(版が異なる既存ディレクトリが期待する版へ置き換わること)
+      - 1.5: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i '' 's|v${GDUNIT4_VERSION}|v6.1.3|' scripts/fetch_gdunit4.sh; rm -rf addons/gdUnit4; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q '6.1.3' /tmp/e.txt && grep -q "$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '\"')" /tmp/e.txt && test $rc -eq 1 && echo OK`(URL のタグだけを別の実在する版へ変え、ダウンロードは成功するが照合に失敗する状態を作る。期待した版と実際の版の両方が標準エラーに出て、終了コードが 1 になること。URL の組み立て方は実装に合わせて sed のパターンを調整する)
+      - 1.6: `E=$(mktemp -d); PATH=$E ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; grep -q 'curl\|unzip' /tmp/e.txt && test $rc -eq 1 && echo OK`(実在コマンドを含まない PATH で実行し、不足しているコマンド名が標準エラーに出て終了コードが 1 になること)
+      - 1.7: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i '' 's/^GDUNIT4_VERSION=.*/GDUNIT4_VERSION="99.99.99"/' scripts/fetch_gdunit4.sh; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q 'http' /tmp/e.txt && test $rc -eq 1 && echo OK`(存在しないタグでダウンロードを失敗させ、URL と HTTP ステータスが標準エラーに出ること)
+      - **後始末(4 本すべての実行後に必ず行う)**: `rm -f addons/gdUnit4/plugin.cfg.bak /tmp/f.orig /tmp/e.txt; ./scripts/fetch_gdunit4.sh && grep -q version addons/gdUnit4/plugin.cfg && echo RESTORED`。1.5 と 1.7 の手順は `addons/gdUnit4/` を削除した状態で終わるため、復元しないと後続のタスク 2.1・2.2 の検証コマンドが失敗する
+      - 本サブタスクは `addons/gdUnit4/` を一時的に壊すため、タスク 2.1・2.2 と**同時に実行しない**((P) を付けない理由)
   - [ ] 1.3 (P) `.gitignore` に `addons/gdUnit4/` と `reports/` を追加する。`project.godot` の `editor_plugins` は変更しない
     _Requirements: 1.8, 9.1, 9.2_
     _Boundary: RepoConfig_
@@ -62,7 +64,7 @@
     _Depends: 1.1_
     - 対象ファイル: `tests/harness/scene_test.gd`(新規)
     - 仕様参照: spec.md §5.4「ノードの後始末」「物理フレームの進行」
-    - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | grep -q '0 orphans' && echo OK`
+    - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt && echo OK`(統計行の `0 orphans` は gdUnit4 v6.2.0 の出力で確認済みの表記。書式が変わっていた場合は統計行の orphans の値が 0 であることを読み替えて判定する)
 
 - [ ] 3. 実行スクリプトの前提整備
   - [ ] 3.1 `scripts/run_tests.sh` を新規作成し、Godot の解決と `timeout` の解決を**それぞれ独立した異常系**として実装する。どちらか一方が欠けても標準エラーへ出力して終了コード 1 で終わる。`timeout` の不在時は入手方法(Homebrew の `coreutils`)も出す
@@ -71,9 +73,9 @@
     _Depends: 1.1_
     - 対象ファイル: `scripts/run_tests.sh`(新規)
     - 仕様参照: spec.md §5.2 の事前条件とエラー表
-    - 検証コマンド(2 本。異常系ごとに 1 本ずつ):
+    - 検証コマンド(2 本。**bash で実行する**。異常系ごとに 1 本ずつ):
       - 3.4(Godot だけが無い): `D=$(mktemp -d); ln -s "$(command -v timeout)" "$D/timeout"; env -u GODOT_BIN PATH="$D:/usr/bin:/bin" ./scripts/run_tests.sh; test $? -eq 1 && echo OK`
-      - 3.6(`timeout` だけが無い): `D=$(mktemp -d); ln -s "$(command -v godot)" "$D/godot"; PATH="$D:/usr/bin:/bin" ./scripts/run_tests.sh 2>&1 >/dev/null | grep -q coreutils; test ${PIPESTATUS[0]} -eq 1 && echo OK`
+      - 3.6(`timeout` だけが無い): `D=$(mktemp -d); ln -s "$(command -v godot)" "$D/godot"; PATH="$D:/usr/bin:/bin" ./scripts/run_tests.sh 2>/tmp/e.txt; rc=$?; grep -q coreutils /tmp/e.txt && test $rc -eq 1 && echo OK`
   - [ ] 3.2 実行スクリプトが取得スクリプトを毎回呼ぶようにする
     _Requirements: 2.5_
     _Boundary: RunScript_
@@ -90,13 +92,13 @@
     - 検証コマンド(2 本):
       - 3.1: `rm -rf .godot && ./scripts/run_tests.sh; test -f .godot/global_script_class_cache.cfg && echo OK`
       - 3.5: `rm -rf .godot && D=$(mktemp -d); printf '#!/bin/sh\nexit 1\n' > "$D/godot"; chmod +x "$D/godot"; GODOT_BIN="$D/godot" ./scripts/run_tests.sh; test $? -eq 1 && echo OK`(インポートを失敗させ、テストを実行せず 1 で終わること。`reports/` が作られていないことも `test ! -d reports` で確認する)
-  - [ ] 3.4 実行スクリプトが第 1 引数でテストのパスを受け取り、省略時は `res://tests` を使うようにする
+  - [ ] 3.4 実行スクリプトが第 1 引数でテストのパスを受け取り、省略時は `res://tests` を使うようにする。**解決したパスを標準出力へ 1 行出す**(この時点では gdUnit4 の起動が未実装のため、判定の材料をこの出力に置く)
     _Requirements: 2.2_
     _Boundary: RunScript_
     _Depends: 3.1_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 の定義と入力
-    - 検証コマンド: `./scripts/run_tests.sh res://tests/harness 2>&1 | grep -q 'res://tests/harness' && echo OK`(渡したパスが gdUnit4 の起動引数に反映されること)
+    - 検証コマンド: `./scripts/run_tests.sh res://tests/harness | grep -q 'res://tests/harness' && echo OK`(引数を渡した場合)、`./scripts/run_tests.sh | grep -q 'res://tests$' && echo OK`(省略した場合の既定値)
 
 - [ ] 4. 実行スクリプトのテスト実行と終了コードの確定
   - [ ] 4.1 gdUnit4 の実行前に `reports/` を削除し、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
@@ -121,14 +123,14 @@
     - 仕様参照: spec.md §5.2 副作用 5・6、§8 の経路の表
     - 検証コマンド(2 本):
       - 4.2(0 件): `./scripts/run_tests.sh res://tests/does_not_exist; test $? -eq 1 && echo OK`
-      - 4.6(パースエラーのみ): `mkdir -p tests/tmp_broken && printf 'extends GdUnitTestSuite\n\nfunc test_x() -> void:\n\tthis is not valid\n' > tests/tmp_broken/broken_test.gd; for i in 1 2 3; do ./scripts/run_tests.sh res://tests/tmp_broken; c=$?; test $c -eq 0 && echo NG; done; rm -r tests/tmp_broken`(3 回とも 0 以外であること。spec.md §3 のとおり終了コードは 1 と 105 に割れるため、0 が出ないことを条件にする)
-  - [ ] 4.4 実行全体を 120 秒のタイムアウトで包み、超過時に終了コード 124 を返す
+      - 4.6(パースエラーのみ): `mkdir -p tests/tmp_broken && printf 'extends GdUnitTestSuite\n\nfunc test_x() -> void:\n\tthis is not valid\n' > tests/tmp_broken/broken_test.gd; ng=0; for i in 1 2 3; do ./scripts/run_tests.sh res://tests/tmp_broken; test $? -eq 0 && ng=1; done; rm -r tests/tmp_broken; test $ng -eq 0 && echo OK`(3 回とも 0 以外であること。spec.md §3 のとおり終了コードは 1 と 105 に割れるため、0 が出ないことを条件にする)
+  - [ ] 4.4 実行全体を 120 秒のタイムアウトで包み、超過時に終了コード 124 を返す。秒数はスクリプト内の定数 `TIMEOUT_SECONDS` に置く(spec.md §5.2 は実行スクリプトの入力を第 1 引数のみと定めているため、上書き用の環境変数を設けない)
     _Requirements: 8.1, 8.2_
     _Boundary: RunScript_
     _Depends: 4.3_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 7、§7 Requirement 8
-    - 検証コマンド: `RUN_TESTS_TIMEOUT=1 ./scripts/run_tests.sh; test $? -eq 124 && echo OK`(タイムアウト値を環境変数で上書きできるようにし、既定は 120 秒とする。既定値は `grep -q '120' scripts/run_tests.sh` で確認する)
+    - 検証コマンド(**bash で実行する**): `grep -q '^TIMEOUT_SECONDS=120$' scripts/run_tests.sh && echo OK`(既定値)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i '' 's/^TIMEOUT_SECONDS=120$/TIMEOUT_SECONDS=1/' scripts/run_tests.sh; ./scripts/run_tests.sh; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig; test $rc -eq 124 && echo OK`(定数を一時的に 1 秒へ下げて超過させ、確認後に復元する)
 
 - [ ] 5. `make test` の入口
   - [ ] 5.1 `Makefile` に `test` ターゲットを追加する。`TESTS` 変数で対象を切り替え、終了コードをそのまま伝え、既定ターゲット `all` に依存させない。版の値を書かない
@@ -154,7 +156,7 @@
     - 対象ファイル: `.github/workflows/test.yml`(新規)
     - 仕様参照: spec.md §5.5
     - 検証コマンド:
-      - 構文と静的な確認: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)"`、`grep -q 'uses: *[^a]*godot' .github/workflows/test.yml && echo NG || echo OK`(サードパーティ action を使わないこと。6.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
+      - 構文と静的な確認: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)"`、`grep -qiE '^[[:space:]]*(- )?uses:.*godot' .github/workflows/test.yml && echo NG || echo OK`(`uses:` 行に godot を含むサードパーティ action を使わないこと。6.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
       - 6.5: 意図的に失敗するテストを 1 件足した状態で push し、`gh pr checks` が失敗することを確認してから戻す
       - 6.6: Godot の取得 URL を一時的に存在しない値へ変えて push し、失敗するステップが取得のステップであることを `gh run view --log-failed` で確認してから戻す
   - [ ] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
