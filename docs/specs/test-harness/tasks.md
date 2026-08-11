@@ -29,7 +29,7 @@
     - 対象ファイル: `scripts/fetch_gdunit4.sh`(新規)
     - 仕様参照: spec.md §5.1、§6.1
     - 検証コマンド: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); rm -rf addons/gdUnit4 && ./scripts/fetch_gdunit4.sh && grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo OK`(取得と照合)、`./scripts/fetch_gdunit4.sh | grep -q 'skipped' && echo OK`(2 回目はダウンロードしないこと。**標準出力に `skipped` と版を出す**ことをこのタスクの実装内容に含める)
-  - [ ] 1.2 取得スクリプトの異常系を実装する。必要なコマンドの不足・ダウンロードの失敗・展開後の版の不一致・版が異なる既存ディレクトリの置き換え
+  - [x] 1.2 取得スクリプトの異常系を実装する。必要なコマンドの不足・ダウンロードの失敗・展開後の版の不一致・版が異なる既存ディレクトリの置き換え
     _Requirements: 1.4, 1.5, 1.6, 1.7_
     _Boundary: FetchScript_
     _Depends: 1.1_
@@ -192,3 +192,6 @@
 - タスク 1.2 の検証 1.5 が使う `sed 's|v${GDUNIT4_VERSION}|v6.1.3|'` は `GDUNIT4_ARCHIVE_URL` の行に一致する。
 - タスク 1.2 で要件 1.6 を実装するとき、検証コマンドが `PATH=$(mktemp -d)` で実行するため `sed`・`head`・`mktemp` も使えない状態になる。`command -v` と `printf` は bash の組み込みなので、必要コマンドの事前確認を `main()` の先頭(`installed_version` の呼び出しより前)に置く。
 - `shellcheck` は本環境に未導入。導入せずに進める(`bash -n` の構文検査で代替)。
+- **シバンは `#!/bin/bash`**(タスク 1.2)。`#!/usr/bin/env bash` にすると、PATH を空にした状態でスクリプト自体が起動できず(`env: bash: No such file or directory`、rc=127)、「不足しているコマンドを報告する」振る舞いを観測できない。副作用として macOS の既定 bash 3.2 で動くため、連想配列・`mapfile`・`${var^^}` 等の bash 4 以降の機能を使わない。`scripts/run_tests.sh` も同じ制約に合わせる。
+- 取得スクリプトは `curl`・`unzip` 以外の外部コマンドに依存しないよう、`plugin.cfg` の読み取りを bash 組み込みのパーサ `plugin_cfg_value()` で行い、`dirname` の代わりに `${BASH_SOURCE[0]%/*}` を使う(`dirname` が無いと `REPO_ROOT` がファイルシステムの根へ潰れる)。
+- 既存 `addons/gdUnit4/` の削除は、ダウンロードと版の照合が終わった後・`mv` の直前に行う。先に消すと、版を上げた直後にネットワークが不通のとき旧版を失ったうえで取得にも失敗する。`mv` が失敗した場合は部分的な配置をその場で削除する。
