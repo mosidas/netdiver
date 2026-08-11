@@ -23,7 +23,7 @@
 ## タスク一覧
 
 - [ ] 1. gdUnit4 の取得
-  - [ ] 1.1 `scripts/fetch_gdunit4.sh` を新規作成し、版を固定して取得・展開し、`plugin.cfg` の `version` で照合する。既に一致していればダウンロードせず、その旨を標準出力へ出す
+  - [x] 1.1 `scripts/fetch_gdunit4.sh` を新規作成し、版を固定して取得・展開し、`plugin.cfg` の `version` で照合する。既に一致していればダウンロードせず、その旨を標準出力へ出す
     _Requirements: 1.1, 1.2, 1.3, 1.9_
     _Boundary: FetchScript_
     - 対象ファイル: `scripts/fetch_gdunit4.sh`(新規)
@@ -185,3 +185,10 @@
 ## Implementation Notes
 
 (このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付き・レビューを通過した境界外変更の申告を追記する領域)
+
+- 知識 port: `docs/dev/ports` が存在しないため、注入なしで進める。
+- 取得スクリプトの構造(タスク 1.1): 版は `GDUNIT4_VERSION` の 1 箇所、URL は `v${GDUNIT4_VERSION}` で組み立てる。展開後の版は `installed_version()` が `plugin.cfg` から読む。`main()` は「版が一致 → skip」「既存ディレクトリあり → 停止(タスク 1.2 で削除・再取得へ置き換える)」「それ以外 → `fetch_and_install`」の 3 分岐。
+- v6.2.0 のソースアーカイブは `runtest.sh` の実行ビットを保持するが、展開側の umask や unzip の実装に依存させないため `chmod +x` を `mv` の前に行う(失敗時に中途半端な `addons/gdUnit4` を残さない)。
+- タスク 1.2 の検証 1.5 が使う `sed 's|v${GDUNIT4_VERSION}|v6.1.3|'` は `GDUNIT4_ARCHIVE_URL` の行に一致する。
+- タスク 1.2 で要件 1.6 を実装するとき、検証コマンドが `PATH=$(mktemp -d)` で実行するため `sed`・`head`・`mktemp` も使えない状態になる。`command -v` と `printf` は bash の組み込みなので、必要コマンドの事前確認を `main()` の先頭(`installed_version` の呼び出しより前)に置く。
+- `shellcheck` は本環境に未導入。導入せずに進める(`bash -n` の構文検査で代替)。
