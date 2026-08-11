@@ -37,10 +37,10 @@
     - 仕様参照: spec.md §5.1 のエラー表と「既存ディレクトリの置き換え」
     - 検証コマンド(4 本。**bash で実行する**。異常系ごとに 1 本ずつ。spec.md §5.1 は取得スクリプトの入力を「なし」と定めているため、検証用の環境変数を実装に足さず、スクリプトを一時的に書き換えて異常系を起こし、確認後に復元する):
       - 1.4: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); sed -i.bak 's/^version=.*/version="0.0.0"/' addons/gdUnit4/plugin.cfg; ./scripts/fetch_gdunit4.sh; grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo OK`(版が異なる既存ディレクトリが期待する版へ置き換わること)
-      - 1.5: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i '' 's|v${GDUNIT4_VERSION}|v6.1.3|' scripts/fetch_gdunit4.sh; rm -rf addons/gdUnit4; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q '6.1.3' /tmp/e.txt && grep -q "$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '\"')" /tmp/e.txt && test $rc -eq 1 && echo OK`(URL のタグだけを別の実在する版へ変え、ダウンロードは成功するが照合に失敗する状態を作る。期待した版と実際の版の両方が標準エラーに出て、終了コードが 1 になること。URL の組み立て方は実装に合わせて sed のパターンを調整する)
+      - 1.5: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i.bak 's|v${GDUNIT4_VERSION}|v6.1.3|' scripts/fetch_gdunit4.sh; rm -rf addons/gdUnit4; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q '6.1.3' /tmp/e.txt && grep -q "$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '\"')" /tmp/e.txt && test $rc -eq 1 && echo OK`(URL のタグだけを別の実在する版へ変え、ダウンロードは成功するが照合に失敗する状態を作る。期待した版と実際の版の両方が標準エラーに出て、終了コードが 1 になること。URL の組み立て方は実装に合わせて sed のパターンを調整する)
       - 1.6: `E=$(mktemp -d); PATH=$E ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; grep -q 'curl\|unzip' /tmp/e.txt && test $rc -eq 1 && echo OK`(実在コマンドを含まない PATH で実行し、不足しているコマンド名が標準エラーに出て終了コードが 1 になること)
-      - 1.7: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i '' 's/^GDUNIT4_VERSION=.*/GDUNIT4_VERSION="99.99.99"/' scripts/fetch_gdunit4.sh; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q 'http' /tmp/e.txt && test $rc -eq 1 && echo OK`(存在しないタグでダウンロードを失敗させ、URL と HTTP ステータスが標準エラーに出ること)
-      - **後始末(4 本すべての実行後に必ず行う)**: `rm -f addons/gdUnit4/plugin.cfg.bak /tmp/f.orig /tmp/e.txt; ./scripts/fetch_gdunit4.sh && grep -q version addons/gdUnit4/plugin.cfg && echo RESTORED`。1.5 と 1.7 の手順は `addons/gdUnit4/` を削除した状態で終わるため、復元しないと後続のタスク 2.1・2.2 の検証コマンドが失敗する
+      - 1.7: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i.bak 's/^GDUNIT4_VERSION=.*/GDUNIT4_VERSION="99.99.99"/' scripts/fetch_gdunit4.sh; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q 'http' /tmp/e.txt && grep -qE '(^|[^0-9])(4[0-9]{2}|5[0-9]{2})([^0-9]|$)' /tmp/e.txt && test $rc -eq 1 && echo OK`(存在しないタグでダウンロードを失敗させ、URL と **HTTP ステータスの数値**の両方が標準エラーに出て、終了コードが 1 になること。`http` の一致だけでは URL 自体に一致してしまうため、ステータスコードを別条件で検査する)
+      - **後始末(4 本すべての実行後に必ず行う)**: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); rm -f addons/gdUnit4/plugin.cfg.bak scripts/fetch_gdunit4.sh.bak /tmp/f.orig /tmp/e.txt; ./scripts/fetch_gdunit4.sh && grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo RESTORED`。1.5 と 1.7 の手順は `addons/gdUnit4/` を削除した状態で終わるため、復元しないと後続のタスク 2.1・2.2 の検証コマンドが失敗する。`sed -i.bak` を使うのは、`sed -i ''` が BSD sed(macOS)専用で GNU sed では失敗するためである
       - 本サブタスクは `addons/gdUnit4/` を一時的に壊すため、タスク 2.1・2.2 と**同時に実行しない**((P) を付けない理由)
   - [ ] 1.3 (P) `.gitignore` に `addons/gdUnit4/` と `reports/` を追加する。`project.godot` の `editor_plugins` は変更しない
     _Requirements: 1.8, 9.1, 9.2_
@@ -48,7 +48,7 @@
     _Depends: 1.1_
     - 対象ファイル: `.gitignore`(変更)
     - 仕様参照: spec.md §6.4、§5.1「プロジェクト設定への影響」
-    - 検証コマンド: `git status --porcelain | grep -q 'addons/gdUnit4' && echo NG || echo OK`、`grep -c gdUnit4 project.godot`(0 であること)、`git check-ignore -q addons/AsepriteWizard/plugin.cfg && echo NG || echo OK`
+    - 検証コマンド: `test -d addons/gdUnit4 && { git status --porcelain | grep -q 'addons/gdUnit4' && echo NG || echo OK; } || echo "SKIP: addons/gdUnit4 が無い状態では判定できない"`(取得済みであることを前提として明示する)、`grep -c gdUnit4 project.godot`(0 であること)、`git check-ignore -q addons/AsepriteWizard/plugin.cfg && echo NG || echo OK`
 
 - [ ] 2. サンプルのテストスイート
   - [ ] 2.1 (P) `tests/harness/logic_test.gd` を新規作成し、純粋ロジックを検証するテストケースを置く
@@ -130,7 +130,7 @@
     _Depends: 4.3_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 7、§7 Requirement 8
-    - 検証コマンド(**bash で実行する**): `grep -q '^TIMEOUT_SECONDS=120$' scripts/run_tests.sh && echo OK`(既定値)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i '' 's/^TIMEOUT_SECONDS=120$/TIMEOUT_SECONDS=1/' scripts/run_tests.sh; ./scripts/run_tests.sh; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig; test $rc -eq 124 && echo OK`(定数を一時的に 1 秒へ下げて超過させ、確認後に復元する)
+    - 検証コマンド(**bash で実行する**): `grep -q '^TIMEOUT_SECONDS=120$' scripts/run_tests.sh && echo OK`(既定値)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's/^TIMEOUT_SECONDS=120$/TIMEOUT_SECONDS=1/' scripts/run_tests.sh; ./scripts/run_tests.sh; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 124 && echo OK`(定数を一時的に 1 秒へ下げて超過させ、確認後に復元する。`sed -i ''` は BSD sed 専用のため `sed -i.bak` を使う)
 
 - [ ] 5. `make test` の入口
   - [ ] 5.1 `Makefile` に `test` ターゲットを追加する。`TESTS` 変数で対象を切り替え、終了コードをそのまま伝え、既定ターゲット `all` に依存させない。版の値を書かない
@@ -155,8 +155,12 @@
     _Depends: 5.1_
     - 対象ファイル: `.github/workflows/test.yml`(新規)
     - 仕様参照: spec.md §5.5
-    - 検証コマンド:
-      - 構文と静的な確認: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)"`、`grep -qiE '^[[:space:]]*(- )?uses:.*godot' .github/workflows/test.yml && echo NG || echo OK`(`uses:` 行に godot を含むサードパーティ action を使わないこと。6.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
+    - 検証コマンド(`python3` を使う 2 本は PyYAML の導入を前提とする。未導入の場合は `import` が失敗して明示的に落ちるため、実装の欠陥と取り違えることはない):
+      - 構文: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)"`
+      - 6.1・6.2(起動条件): `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); t=d[True] if True in d else d['on']; assert 'pull_request' in t and 'main' in t['push']['branches']; print('OK')"`
+      - 6.3(URL 固定): `grep -q 'https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip' .github/workflows/test.yml && echo OK`(URL の正本は spec.md §5.5)
+      - 6.4(サードパーティ action の不使用): `grep -qiE '^[[:space:]]*(- )?uses:.*godot' .github/workflows/test.yml && echo NG || echo OK`
+      - 1.1(版の値を書かない): `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
       - 6.5: 意図的に失敗するテストを 1 件足した状態で push し、`gh pr checks` が失敗することを確認してから戻す
       - 6.6: Godot の取得 URL を一時的に存在しない値へ変えて push し、失敗するステップが取得のステップであることを `gh run view --log-failed` で確認してから戻す
   - [ ] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
@@ -165,8 +169,8 @@
     _Depends: 6.1_
     - 対象ファイル: `.github/workflows/test.yml`(変更)
     - 仕様参照: spec.md §5.5「成果物」、§7 Requirement 7
-    - 検証コマンド:
-      - 7.2・7.3: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)" | grep -q 'retention-days' && echo OK`、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
+    - 検証コマンド(`python3` を使う 1 本は PyYAML の導入を前提とする。未導入の場合は `import` が失敗して明示的に落ちる):
+      - 7.2・7.3: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); s=[x for j in d['jobs'].values() for x in j['steps'] if 'upload-artifact' in str(x.get('uses',''))]; assert len(s)==1, s; assert s[0]['with']['retention-days']==14, s[0]['with']; print('OK')"`(アップロードのステップが 1 つあり、保存期間の値が 14 であること)、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
 - [ ] 7. ドキュメント反映
@@ -176,7 +180,7 @@
     _Depends: 2.2, 5.1_
     - 対象ファイル: `docs/testing.md`(新規)
     - 仕様参照: spec.md §5.4、§6.1「不変条件」、§6.2
-    - 検証コマンド: `for w in 'tests/' '_test.gd' 'test_' 'assert_' 'auto_free' 'await_millis' 'InputEvent'; do grep -q "$w" docs/testing.md || echo "NG: $w"; done; echo done`(配置・命名・アサーション・後始末・物理フレーム・禁止事項の 5 項目が記載されていること)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" docs/testing.md`(0 であること)
+    - 検証コマンド: `ng=0; for w in 'tests/' '_test.gd' 'test_' 'assert_' 'auto_free' 'await_millis' 'InputEvent'; do grep -q "$w" docs/testing.md || { echo "NG: $w"; ng=1; }; done; test $ng -eq 0 && echo OK`(配置・命名・アサーション・後始末・物理フレーム・禁止事項の記載があること)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" docs/testing.md`(0 であること)
 
 ## Implementation Notes
 
