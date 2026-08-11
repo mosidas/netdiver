@@ -16,3 +16,6 @@ mono_crash.*.json
 
 # Build output
 build/
+
+# Claude Code の作業用ディレクトリ
+.claude/.cc-writes/
