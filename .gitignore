@@ -17,6 +17,12 @@ mono_crash.*.json
 # Build output
 build/
 
+# scripts/fetch_gdunit4.sh が取得する。addons 全体ではなくこのディレクトリだけを対象にする
+addons/gdUnit4/
+
+# テストの実行で生成される
+reports/
+
 # Claude Code の作業用ディレクトリ
 .claude/.cc-writes/
 

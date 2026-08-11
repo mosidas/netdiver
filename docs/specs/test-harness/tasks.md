@@ -42,7 +42,7 @@
       - 1.7: `cp scripts/fetch_gdunit4.sh /tmp/f.orig; sed -i.bak 's/^GDUNIT4_VERSION=.*/GDUNIT4_VERSION="99.99.99"/' scripts/fetch_gdunit4.sh; ./scripts/fetch_gdunit4.sh 2>/tmp/e.txt; rc=$?; cp /tmp/f.orig scripts/fetch_gdunit4.sh; grep -q 'http' /tmp/e.txt && grep -qE '(^|[^0-9])(4[0-9]{2}|5[0-9]{2})([^0-9]|$)' /tmp/e.txt && test $rc -eq 1 && echo OK`(存在しないタグでダウンロードを失敗させ、URL と **HTTP ステータスの数値**の両方が標準エラーに出て、終了コードが 1 になること。`http` の一致だけでは URL 自体に一致してしまうため、ステータスコードを別条件で検査する)
       - **後始末(4 本すべての実行後に必ず行う)**: `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); rm -f addons/gdUnit4/plugin.cfg.bak scripts/fetch_gdunit4.sh.bak /tmp/f.orig /tmp/e.txt; ./scripts/fetch_gdunit4.sh && grep -q "version=\"$V\"" addons/gdUnit4/plugin.cfg && echo RESTORED`。1.5 と 1.7 の手順は `addons/gdUnit4/` を削除した状態で終わるため、復元しないと後続のタスク 2.1・2.2 の検証コマンドが失敗する。`sed -i.bak` を使うのは、`sed -i ''` が BSD sed(macOS)専用で GNU sed では失敗するためである
       - 本サブタスクは `addons/gdUnit4/` を一時的に壊すため、タスク 2.1・2.2 と**同時に実行しない**((P) を付けない理由)
-  - [ ] 1.3 (P) `.gitignore` に `addons/gdUnit4/` と `reports/` を追加する。`project.godot` の `editor_plugins` は変更しない
+  - [x] 1.3 (P) `.gitignore` に `addons/gdUnit4/` と `reports/` を追加する。`project.godot` の `editor_plugins` は変更しない
     _Requirements: 1.8, 9.1, 9.2_
     _Boundary: RepoConfig_
     _Depends: 1.1_
