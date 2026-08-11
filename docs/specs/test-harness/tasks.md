@@ -82,7 +82,7 @@
     _Depends: 3.1_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 1
-    - 検証コマンド: `rm -rf addons/gdUnit4 && ./scripts/run_tests.sh; test -f addons/gdUnit4/plugin.cfg && echo OK`
+    - 検証コマンド(2 本): `rm -rf addons/gdUnit4 && ./scripts/run_tests.sh; test -f addons/gdUnit4/plugin.cfg && echo OK`(未取得の状態から取得されること)、`./scripts/run_tests.sh | grep -q 'skipped' && echo OK`(取得済みの状態でも取得スクリプトが呼ばれ、1.1 が定めた `skipped` の出力が現れること。条件付きで呼ぶ実装はこの 2 本目を通らない)
   - [ ] 3.3 クラスキャッシュが無ければ `--headless --import` で生成する。生成に失敗したらテストを実行せず終了コード 1 で終わる
     _Requirements: 3.1, 3.5_
     _Boundary: RunScript_
@@ -139,7 +139,7 @@
     _Depends: 4.4_
     - 対象ファイル: `Makefile`(変更)
     - 仕様参照: spec.md §5.3、§6.1「不変条件」
-    - 検証コマンド: `make test && echo OK`、`make test TESTS=res://tests/harness && echo OK`、`make -n test | grep -qi aseprite && echo NG || echo OK`、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" Makefile`(0 であること)
+    - 検証コマンド: `make test && echo OK`(2.1・2.3 の成功経路)、`make test TESTS=res://tests/harness | grep -q 'res://tests/harness' && echo OK`(2.2。`TESTS` を無視する `Makefile` は 3.4 が出力する解決済みのパスが一致しないため通らない)、`make -n test | grep -qi aseprite && echo NG || echo OK`(2.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" Makefile`(1.1。0 であること)、`make test TESTS=res://tests/does_not_exist; test $? -eq 1 && echo OK`(2.3 の失敗経路。実行スクリプトの終了コードが `make` に伝わること)
   - [ ] 5.2 クラスキャッシュと gdUnit4 が取得済みの状態で `make test` が 30 秒以内に終わることを計測する
     _Requirements: 8.3_
     _Boundary: Makefile_
