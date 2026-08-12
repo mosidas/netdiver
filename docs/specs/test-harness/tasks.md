@@ -101,21 +101,21 @@
     - 検証コマンド: `./scripts/run_tests.sh res://tests/harness | grep -q 'res://tests/harness' && echo OK`(引数を渡した場合)、`./scripts/run_tests.sh | grep -q 'res://tests$' && echo OK`(省略した場合の既定値)
 
 - [ ] 4. 実行スクリプトのテスト実行と終了コードの確定
-  - [ ] 4.1 gdUnit4 の実行前に `reports/` を削除し、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
+  - [x] 4.1 gdUnit4 の実行前に `reports/` を削除し、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
     _Requirements: 3.2, 3.3, 7.1, 7.5_
     _Boundary: RunScript_
     _Depends: 3.3, 3.4, 2.1_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 3・4
     - 検証コマンド: `mkdir -p reports/report_99 && touch reports/report_99/stale && ./scripts/run_tests.sh; test ! -e reports/report_99/stale && ls reports/report_*/results.xml reports/report_*/index.html && echo OK`(実行前に削除されることと、レポートが出力されること)
-  - [ ] 4.2 gdUnit4 の終了コードが 0 以外のときは件数判定を行わず、その値をそのまま返す。全成功のときは 0 を返す
+  - [x] 4.2 gdUnit4 の終了コードが 0 以外のときは件数判定を行わず、その値をそのまま返す。全成功のときは 0 を返す
     _Requirements: 4.1, 4.3, 4.4, 4.5_
     _Boundary: RunScript_
     _Depends: 4.1_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 のエラー表、§7 Requirement 4
     - 検証コマンド(2 本): `./scripts/run_tests.sh; test $? -eq 0 && echo OK`(全成功)、`printf 'extends GdUnitTestSuite\n\nfunc test_fail() -> void:\n\tassert_int(1).is_equal(2)\n' > tests/harness/tmp_fail_test.gd; ./scripts/run_tests.sh; test $? -eq 100 && echo OK; rm tests/harness/tmp_fail_test.gd`(失敗の透過)
-  - [ ] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の `testcase` 件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す
+  - [x] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の `testcase` 件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す
     _Requirements: 4.2, 4.6_
     _Boundary: RunScript_
     _Depends: 4.2_
@@ -124,7 +124,7 @@
     - 検証コマンド(2 本):
       - 4.2(0 件): `./scripts/run_tests.sh res://tests/does_not_exist; test $? -eq 1 && echo OK`
       - 4.6(パースエラーのみ): `mkdir -p tests/tmp_broken && printf 'extends GdUnitTestSuite\n\nfunc test_x() -> void:\n\tthis is not valid\n' > tests/tmp_broken/broken_test.gd; ng=0; for i in 1 2 3; do ./scripts/run_tests.sh res://tests/tmp_broken; test $? -eq 0 && ng=1; done; rm -r tests/tmp_broken; test $ng -eq 0 && echo OK`(3 回とも 0 以外であること。spec.md §3 のとおり終了コードは 1 と 105 に割れるため、0 が出ないことを条件にする)
-  - [ ] 4.4 実行全体を 120 秒のタイムアウトで包み、超過時に終了コード 124 を返す。秒数はスクリプト内の定数 `TIMEOUT_SECONDS` に置く(spec.md §5.2 は実行スクリプトの入力を第 1 引数のみと定めているため、上書き用の環境変数を設けない)
+  - [x] 4.4 実行全体を 120 秒のタイムアウトで包み、超過時に終了コード 124 を返す。秒数はスクリプト内の定数 `TIMEOUT_SECONDS` に置く(spec.md §5.2 は実行スクリプトの入力を第 1 引数のみと定めているため、上書き用の環境変数を設けない)
     _Requirements: 8.1, 8.2_
     _Boundary: RunScript_
     _Depends: 4.3_
@@ -197,4 +197,7 @@
 - 既存 `addons/gdUnit4/` の削除は、ダウンロードと版の照合が終わった後・`mv` の直前に行う。先に消すと、版を上げた直後にネットワークが不通のとき旧版を失ったうえで取得にも失敗する。`mv` が失敗した場合は部分的な配置をその場で削除する。
 - **`move_and_slide()` は物理フレームの中で呼ぶ**(タスク 2.2 で判明)。テスト本体のループから呼ぶと、Godot が `get_process_delta_time()`(描画フレームの delta)を使うため変位が定まらない(100 px/s・3 回の呼び出しで 5.0 px にならず、実測で 2.37 px・10.58 px と回ごとに異なった)。ノードに `_physics_process` から指定回数だけ `move_and_slide()` を呼ばせ、テスト側は `await await_millis()` で完了を待って、消化したフレーム数をアサーションで確かめる。spec.md §5.4 の「物理フレームの進行: `await await_millis()` で待つ」だけでは移動の検証に足りない。`docs/testing.md`(タスク 7.1)にこの補足を書く。
 - `gdUnit4` を取得する前に生成した `.godot/global_script_class_cache.cfg` には `GdUnitTestSuite` 等が登録されていない。取得の後に `godot --headless --import --path .` を実行し直さないと、テストの探索がパースエラーになる。`scripts/run_tests.sh`(タスク 3.3)はキャッシュの有無だけを見るため、この順序の問題を踏まないよう取得の後にインポートする。
+- **タイムアウトで包む範囲**(タスク 4.4): gdUnit4 の起動だけを包み、取得とインポートは含めない。124 が「テストが終わらない」以外(ネットワークの遅さ・初回インポートの所要時間)でも出ると原因を切り分けられず、要件 8.3 の計測が取得済み・キャッシュ済みの状態を前提にしていることとも合わないため。spec.md §5.2 副作用 7 の「全体を 120 秒のタイムアウトで包む」はスクリプト全体とも読めるため、文言の擦り合わせが要る(実装後の報告事項)。
+- **`--godot_binary` には絶対パスを渡す**(タスク 4.1)。`addons/gdUnit4/runtest.sh` は `[ ! -f "$godot_binary" ]` で実行ファイルの存在を確かめるため、`godot` のままでは `does not exist` で止まる。`GODOT_BIN` 経由でも同じ検査を通る。
+- **正常なスイートとパースエラーのスイートが混在する経路**は 3 回とも終了コード 134 でレポートが出力される(spec.md §3・§8 の記述どおり)。件数判定では検出できず、0 以外の透過で失敗になる。パースエラーのみの経路は 1・1・105 と割れた(0 は出ない)。
 - **tasks.md タスク 2.2 の検証コマンドの不備**: `... | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt` は、`grep -q` が最初の一致で終了して `tee` が SIGPIPE で死ぬため `/tmp/o.txt` が途中で切れ、2 本目の判定が偽陰性になる。判定には出力をファイルへリダイレクトしてから grep する形(`... > /tmp/o.txt 2>&1; grep -q ... /tmp/o.txt`)を使った。同じ形の検証コマンドが他タスクにもあるため、パイプで `grep -q` に渡す判定は同じ置き換えを行う。

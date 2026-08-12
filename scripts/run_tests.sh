@@ -3,6 +3,7 @@
 set -euo pipefail
 
 DEFAULT_TEST_PATH="res://tests"
+TIMEOUT_SECONDS=120
 
 # `dirname` を使わない。PATH に無いと空文字へ潰れ、REPO_ROOT がファイルシステムの根になるため
 SCRIPT_DIR="."
@@ -12,6 +13,9 @@ fi
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 FETCH_SCRIPT="${REPO_ROOT}/scripts/fetch_gdunit4.sh"
 CLASS_CACHE="${REPO_ROOT}/.godot/global_script_class_cache.cfg"
+RUNTEST_SCRIPT="${REPO_ROOT}/addons/gdUnit4/runtest.sh"
+REPORTS_DIR="${REPO_ROOT}/reports"
+REPORTS_RES_PATH="res://reports"
 
 GODOT=""
 
@@ -20,8 +24,10 @@ resolve_godot() {
     GODOT="${GODOT_BIN}"
     return 0
   fi
+  # PATH での解決結果を絶対パスへ展開する。`godot` のままだと、gdUnit4 の `runtest.sh` が
+  # 実行ファイルの存在を `-f` で確かめる箇所に一致せず「does not exist」で止まるため
   if command -v godot >/dev/null 2>&1; then
-    GODOT="godot"
+    GODOT="$(command -v godot)"
     return 0
   fi
   printf 'godot not found: set GODOT_BIN to the Godot editor binary, or put godot on PATH\n' >&2
@@ -70,6 +76,71 @@ ensure_class_cache() {
   fi
 }
 
+run_gdunit4() {
+  local test_path="$1"
+
+  # 実行の前に消す。前回のレポートが残っていると、探索エラーで新しいレポートが出なかった回でも
+  # `results.xml` が見つかり、件数判定が古い結果を根拠に成功と誤判定するため
+  rm -rf "${REPORTS_DIR}"
+
+  # タイムアウトで包む範囲を gdUnit4 の起動だけに限る。取得とインポートを含めると、124 が
+  # 「テストが終わらない」以外(ネットワークの遅さ・初回インポートの所要時間)でも出て原因を切り分けられず、
+  # 実行時間の基準(要件 8.3)が取得済み・キャッシュ済みの状態を前提にしていることとも合わなくなるため
+  local status=0
+  (
+    # `runtest.sh` が `--path .` で Godot を起動し、`-rd res://reports` もその作業ディレクトリを
+    # 基準に解決するため、呼び出し位置にかかわらずリポジトリルートで実行する
+    cd "${REPO_ROOT}" || exit 1
+    exec timeout "${TIMEOUT_SECONDS}" "${RUNTEST_SCRIPT}" \
+      --godot_binary "${GODOT}" \
+      --headless --ignoreHeadlessMode --continue \
+      -a "${test_path}" \
+      -rd "${REPORTS_RES_PATH}"
+  ) || status=$?
+
+  return "${status}"
+}
+
+latest_report_dir() {
+  local dir sequence latest="" latest_sequence=-1
+
+  for dir in "${REPORTS_DIR}"/report_*; do
+    [[ -d "${dir}" ]] || continue
+    sequence="${dir##*/report_}"
+    # 連番として読めないディレクトリ名を数値比較へ渡さない。`[[ -gt ]]` が構文エラーで落ちるため
+    case "${sequence}" in
+      '' | *[!0-9]*) continue ;;
+    esac
+    if [[ "${sequence}" -gt "${latest_sequence}" ]]; then
+      latest_sequence="${sequence}"
+      latest="${dir}"
+    fi
+  done
+
+  printf '%s' "${latest}"
+}
+
+# gdUnit4 が 0 を返した回にだけ呼ぶ。0 以外の終了コードは書き換えずに透過する契約であり、
+# 混在時のクラッシュ(134)はレポートが出るため件数では検出できない
+verify_report_has_test_cases() {
+  local report_dir results count
+
+  report_dir="$(latest_report_dir)"
+  if [[ -z "${report_dir}" || ! -f "${report_dir}/results.xml" ]]; then
+    printf 'gdUnit4 exited 0 but no results.xml was produced under %s: no test case was executed\n' \
+      "${REPORTS_DIR}" >&2
+    return 1
+  fi
+
+  results="${report_dir}/results.xml"
+  # 一致が無いときの `grep` の終了コード 1 で打ち切らない。0 件であること自体が判定の材料であるため
+  count="$({ grep -o '<testcase[ />]' "${results}" || true; } | wc -l)"
+  if [[ "$((count))" -eq 0 ]]; then
+    printf 'gdUnit4 exited 0 but %s has 0 testcase elements: no test case was executed\n' "${results}" >&2
+    return 1
+  fi
+}
+
 main() {
   local test_path="${1:-${DEFAULT_TEST_PATH}}"
 
@@ -78,6 +149,14 @@ main() {
   ensure_class_cache
 
   printf 'test path: %s\n' "${test_path}"
+
+  local status=0
+  run_gdunit4 "${test_path}" || status=$?
+  if [[ "${status}" -ne 0 ]]; then
+    return "${status}"
+  fi
+
+  verify_report_has_test_cases
 }
 
 main "$@"
