@@ -90,7 +90,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - ツリーへ載せたノードは `auto_free()` と対にする(`docs/testing.md`)
     - 検証コマンド: `make test TESTS=res://tests/player`、`grep -n 'move_and_slide' src/player/player.gd > /tmp/mas.txt; cat /tmp/mas.txt`(出現が `_physics_process` の中の 1 箇所だけであること)
 
-- [ ] 2. 移動・ジャンプ・向きの速度計算
+- [x] 2. 移動・ジャンプ・向きの速度計算
   - [x] 2.1 `move_x` による水平の速度の停止と `facing` の更新を実装する
     _Requirements: 1.2, 1.6, 1.7_
     _Boundary: Player_
@@ -107,7 +107,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §5.1「接地状態を引数で受け取る理由」、§7 Requirement 1
     - 実装の要点: 1.4(接地 + ジャンプ)と 1.5(非接地 + ジャンプ)は分岐の両側であり、個別のテストケースを割り当てる。1.11 は接地 + ジャンプ無しの分岐
     - 検証コマンド: `make test TESTS=res://tests/player`
-  - [ ] 2.3 異常系を実装する。`delta <= 0.0` での `apply_command()` と、0 以下の値を持つ `PlayerStats` の検証
+  - [x] 2.3 異常系を実装する。`delta <= 0.0` での `apply_command()` と、0 以下の値を持つ `PlayerStats` の検証
     _Requirements: 1.8, 10.3_
     _Boundary: Player_
     _Depends: 2.2_
@@ -308,6 +308,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`facing` の算出は `signi()` ではなく `int(signf())` を使った**(タスク 2.1)。spec §7 1.6 は `signi(move_x)` と書くが、`signi()` は int を取るため float を渡すと切り捨てが挟まり、実測で `signi(0.5) = 0`・`signi(0.9) = 0` となって §5.1 の不変条件(`facing` は -1 または 1)を破る。§5.2 の事後条件が保証する定義域 {-1.0, 0.0, 1.0} では両者は完全に一致するため、契約内の振る舞いに差はない。ゼロ判定も `is_zero_approx()` を使う。
 - **`delta <= 0.0` の早期 return を足すとき(タスク 2.3)は、水平・垂直の両方を変えずに返る必要がある**(タスク 2.1・2.2 の申し送り)。現在の実装は `velocity.x` の代入が `apply_command()` の先頭にあるため、ガードは関数の最初に置く(`facing` の更新もガードより後ろになる)。
 - **境界外変更(タスク 2.2、レビュー通過)**: `tests/player/player_scene_test.gd` の統合テストから `y == 0` のアサーションを外した。重力(要件 1.3)を足すと足場の無いノードは落下するため、要件 1.9 が定めない垂直の固定と両立しない。水平の期待値の算出・許容差 0.001・消化フレーム数のアサーションはそのまま維持し、代わりに `position.y > 0`(落下していること)を足した。
+- **`await assert_error(...).is_push_error(...)` は文言の完全一致で照合する**(タスク 2.3。`GdUnitGodotErrorAssertImpl._has_log_entry` が `GdObjects.equals` を使う)。`%s` の float は `0.0` / `-250.0`、int は `0` と描画される。**`await` を必ず付けること。** `assert_error(...).is_success()` は「callable の実行中に一切のエラーが無い」ことを見る。`add_child()` は同期で `_ready()` まで走り物理フレームは進まないため、足場の無い `Player` でも安定する。
+- **`Player._ready()` が 2 つの検査を持つ**(タスク 2.3): `stats` 未設定 → `push_error` + `PlayerStats.new()` へフォールバック、`stats` の数値項目に 0 以下 → 項目名と現在値を添えて `push_error`。検査対象は `get_property_list()` を `PROPERTY_USAGE_SCRIPT_VARIABLE & PROPERTY_USAGE_EDITOR` と `TYPE_FLOAT / TYPE_INT` で絞って導出している。**`PlayerStats` に「0 を許す数値項目」や `@export_storage` の項目を足すとこの検査が誤検出・見落としをする。**
+- **`apply_command()` の先頭に `delta <= 0.0` のガードがある**(タスク 2.3)。後続タスクが処理を足すときは、ガードより後ろに置くこと。
 - **`Player` のツリー上のテストは足場を持たないため毎回落下する**(タスク 2.2)。垂直方向の値を固定したい後続テストは、仮の足場(`StaticBody2D`・layer 1)を置くか、消化フレーム数から算出すること。
 - **`is_on_floor` は `apply_command()` の引数であり、基底 `CharacterBody2D.is_on_floor()` をシャドウする**(タスク 2.2)。メソッド側を呼ぶとツリー外のテストで常に非接地になる。メソッドの呼び出しは `_physics_process` の 1 箇所だけに保つこと。
 - **テストは既定値のままの `stats` に頼らない**(タスク 1.3 のレビュー指摘)。`move_speed` を既定の 100.0 のままで検証すると、実装が `stats` を読まず 100.0 を直書きしても緑になる。`PlayerStats.new()` に既定と異なる値(例: 250.0)を入れて `player.stats` へ差し替えてから検証すると、要件 10.2(値の出どころの一本化)の退行も捕捉できる。後続の `Player` 系タスク(2.1〜2.3・5.3・6.3)はこの形を採ること。

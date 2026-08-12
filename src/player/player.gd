@@ -7,6 +7,10 @@ extends CharacterBody2D
 ## 描画フレームの delta を使い、同じ入力でも変位が定まらないため、位置の更新は
 ## `_physics_process` の中だけで行う。
 
+const MISSING_STATS_ERROR: String = "Player: stats が設定されていない。既定値の PlayerStats を使う"
+const INVALID_DELTA_ERROR: String = "Player.apply_command(): delta は正でなければならない。速度を変えずに返る"
+const INVALID_STAT_ERROR_FORMAT: String = "Player: stats.%s は正でなければならない(現在値: %s)"
+
 @export var stats: PlayerStats
 
 var facing: int = 1
@@ -16,7 +20,19 @@ var facing: int = 1
 var input_source: Callable = PlayerInput.read
 
 
+func _ready() -> void:
+	if stats == null:
+		push_error(MISSING_STATS_ERROR)
+		stats = PlayerStats.new()
+	_report_non_positive_stats()
+
+
 func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
+	# ガードを関数の先頭に置く: 後ろに置くと、拒否する前に速度の代入が済んでしまう
+	if delta <= 0.0:
+		push_error(INVALID_DELTA_ERROR)
+		return
+
 	velocity.x = cmd.move_x * stats.move_speed
 
 	# 引数の is_on_floor を使い、同名のメソッド is_on_floor() を呼ばない: ツリーに載せていない
@@ -37,3 +53,20 @@ func _physics_process(delta: float) -> void:
 	var cmd: PlayerCommand = input_source.call()
 	apply_command(cmd, delta, is_on_floor())
 	move_and_slide()
+
+
+# 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`PlayerStats` へ
+# 項目を足したときに検査から漏れる
+func _report_non_positive_stats() -> void:
+	for property: Dictionary in stats.get_property_list():
+		var usage: int = property["usage"]
+		if usage & PROPERTY_USAGE_SCRIPT_VARIABLE == 0 or usage & PROPERTY_USAGE_EDITOR == 0:
+			continue
+		var type: int = property["type"]
+		if type != TYPE_FLOAT and type != TYPE_INT:
+			continue
+
+		var stat_name: String = property["name"]
+		var value: Variant = stats.get(stat_name)
+		if float(value) <= 0.0:
+			push_error(INVALID_STAT_ERROR_FORMAT % [stat_name, value])
