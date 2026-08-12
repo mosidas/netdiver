@@ -1,14 +1,21 @@
-# ピクセルアートのビルド。
+# ピクセルアートのビルドとテストの実行。
 # art_src/*.aseprite を Aseprite CLI で書き出し、Godot の SpriteFrames まで生成する。
 #
 #   make            スプライトシート・JSON・SpriteFrames を生成する
 #   make clean      生成物を削除する
+#   make test       tests/ 以下のテストを実行する
+#   make selfcheck  テストの実行スクリプトの終了コードの契約を検査する
 #
 # Aseprite の場所が違う環境では ASEPRITE を上書きする:
 #   make ASEPRITE=/Applications/Aseprite.app/Contents/MacOS/aseprite
+#
+# テストの対象を絞る場合は TESTS を上書きする(変数名に PATH を使わない。
+# make が環境変数 PATH を上書きし、以降のコマンドの解決を壊すため):
+#   make test TESTS=res://tests/harness
 
 ASEPRITE ?= /Users/shota/Library/Application Support/Steam/steamapps/common/Aseprite/Aseprite.app/Contents/MacOS/aseprite
 PYTHON ?= python3
+TESTS ?= res://tests
 
 SRC_DIR := art_src
 OUT_DIR := assets/sprites
@@ -16,8 +23,17 @@ OUT_DIR := assets/sprites
 SOURCES := $(wildcard $(SRC_DIR)/*.aseprite)
 TARGETS := $(patsubst $(SRC_DIR)/%.aseprite,$(OUT_DIR)/%.tres,$(SOURCES))
 
-.PHONY: all clean
+.PHONY: all clean test selfcheck
 all: $(TARGETS)
+
+# 既定ターゲット all に依存させない。テストの実行に Aseprite を要求しないため
+test:
+	./scripts/run_tests.sh $(TESTS)
+
+# test に依存させない。検査は隔離した一時プロジェクトで行い、リポジトリの reports/ を
+# 書き換えない。同じターゲットにまとめると、通常の実行の所要時間の基準に検査の時間が混ざる
+selfcheck:
+	./scripts/selfcheck_run_tests.sh
 
 # --list-tags を付けないと JSON に frameTags が入らず、タグ名をアニメーション名に使えない。
 # .png はこのルールの副産物として同時に生成される。

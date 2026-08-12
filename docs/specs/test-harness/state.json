@@ -1,0 +1,15 @@
+{
+  "workflow": "sdd",
+  "unit": "test-harness",
+  "state": "completed",
+  "approvals": {
+    "spec": true,
+    "tasks": true
+  },
+  "created": "2026-08-11",
+  "updated": "2026-08-12",
+  "frozen": {
+    "spec.md": "10d74d9115e55cb5271838f4a50e674af906537c3ec375ef2e896b5c73a48bc5",
+    "tasks.md": "6b1a22ba782f7f4d1aee589945fce333412e6144fb66c4ed4284ef29c3b51d59"
+  }
+}

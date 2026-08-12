@@ -1,0 +1,42 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # サードパーティの action を使わない。バージョンの固定をこのファイル上で明示するため
+      - name: Install Godot
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/godot.zip \
+            https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          install -m 0755 /tmp/godot/Godot_v4.7.1-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+
+      - name: Run tests
+        run: make test
+
+      # 通常の実行は成功経路しか通らない。失敗を失敗として返す振る舞いの退行を検出するため、
+      # 終了コードの契約を隔離した一時プロジェクトで別に検査する
+      - name: Self-check the exit code contract
+        run: make selfcheck
+
+      # テストが失敗した回のレポートこそ調査に使うため、成否によらずアップロードする
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdunit4-reports
+          path: reports/
+          retention-days: 14
+          # 探索エラーの回は reports/ が生成されない。その回にこのステップでジョブを失敗させない
+          if-no-files-found: ignore
