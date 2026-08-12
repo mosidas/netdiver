@@ -43,7 +43,7 @@ PROJECT
   cp "${REPO_ROOT}/scripts/run_tests.sh" "${REPO_ROOT}/scripts/fetch_gdunit4.sh" "${project}/scripts/"
 
   mkdir -p "${project}/tests/failing" "${project}/tests/passing" "${project}/tests/empty" \
-    "${project}/tests/skipped" "${project}/tests/mixed" "${project}/tests/twocases"
+    "${project}/tests/skipped" "${project}/tests/intskip" "${project}/tests/mixed" "${project}/tests/twocases"
 
   cat > "${project}/tests/failing/failing_test.gd" <<'FAILING'
 extends GdUnitTestSuite
@@ -89,6 +89,15 @@ extends GdUnitTestSuite
 func test_would_fail_if_executed(timout = 5000) -> void:
 	assert_int(1).is_equal(2)
 SKIPPED
+
+  # 意図的なスキップは打ち間違いの検出に当たらない。件数判定そのものに識別力を持たせるため、
+  # この経路でしか落ちない項目を置く
+  cat > "${project}/tests/intskip/intskip_test.gd" <<'INTSKIP'
+extends GdUnitTestSuite
+
+func test_disabled_on_purpose(do_skip = true, skip_reason = "checked by the self check") -> void:
+	assert_int(1).is_equal(2)
+INTSKIP
 }
 
 expect_exit_code() {
@@ -186,7 +195,8 @@ main() {
   expect_exit_code 'failing suite' 100 "${project}" 'res://tests/failing'
   expect_exit_code 'passing suite' 0 "${project}" 'res://tests/passing'
   expect_exit_code 'no test case' 1 "${project}" 'res://tests/empty'
-  expect_exit_code 'all skipped' 1 "${project}" 'res://tests/skipped'
+  expect_exit_code 'all skipped by typo' 1 "${project}" 'res://tests/skipped'
+  expect_exit_code 'all skipped on purpose' 1 "${project}" 'res://tests/intskip'
   expect_exit_code 'typo mixed with a passing case' 1 "${project}" 'res://tests/mixed'
   expect_exit_code 'two cases, first fails' 100 "${project}" 'res://tests/twocases'
   expect_all_cases_executed 'two cases, both executed' 2 "${project}"
