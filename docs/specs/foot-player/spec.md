@@ -152,13 +152,14 @@ var is_cooling_down: bool
 
 ```gdscript
 class_name Projectile extends Area2D
-func launch(direction: Vector2i, speed: float, damage: int) -> void
+func launch(direction: Vector2i, speed: float, damage: int, max_distance: float) -> void
 var damage: int
 ```
 
 - `launch()` の後、毎フレーム `direction` を正規化した向きへ `speed` で進む
-- 地形(レイヤ 1)に触れるか、**発射位置からの移動距離が `PlayerStats.bullet_max_distance`(既定 400px)を超える**と自身を解放する。400px は基準解像度の対角(367px)より長く、画面内で消えない
-- **事前条件**: `direction` は `Vector2i.ZERO` でないこと。`speed > 0`、`damage > 0`
+- 地形(レイヤ 1)に触れるか、**発射位置からの移動距離が `max_distance` を超える**と自身を解放する
+- **`max_distance` を引数で受け取る理由**: `speed`・`damage` と同じく、値の出どころを `PlayerStats` に一本化するため。`Projectile` は `PlayerStats` を参照せず、呼び出し側(`Player`)が `stats.bullet_max_distance` を渡す。既定値の 400px は基準解像度の対角(367px)より長く、画面内で弾が消えない
+- **事前条件**: `direction` は `Vector2i.ZERO` でないこと。`speed > 0`、`damage > 0`、`max_distance > 0`
 - **不変条件**: `damage` は生成時に決まり、以後変わらない
 
 ### 5.7 `DevStage`(仮ステージ)
@@ -292,12 +293,13 @@ tests/weapon/   ...
 
 - 企画書 12.「プレイヤー・敵・武器・ステージ・ネット空間区間をそれぞれシーン化して再利用可能にする」に沿う
 - テストの配置は `docs/testing.md` の規約(実装のディレクトリ構成を写す)に従う
+- **本単位が更新する文書**: `docs/testing.md`。`tests/harness/` が配置の規約の例外であること、サンプルの位置づけ、仮ステージの起動方法を追記する(内容は §7 Requirement 11 が定める)
 
 ## 7. 振る舞い(受け入れ基準)
 
 ### Requirement 1: 移動とジャンプ
 
-**対象**: §5.1 `Player` / §6.1 `PlayerStats`
+**対象**: §5.1 `Player` / §6.1 `PlayerStats` / §6.3 `PlayerCommand`
 
 **受け入れ基準**:
 
@@ -313,6 +315,7 @@ tests/weapon/   ...
 1.8. `delta` が 0 以下の値で `apply_command()` が呼ばれた場合、システムは速度を変えずに返らなければならない。(異常系)
 1.9. `input_source` を差し替えたプレイヤーがシーンツリーの上で 3 物理フレームぶん右へ移動したとき、システムは水平の位置を `move_speed / Engine.physics_ticks_per_second * 3` だけ増やさなければならない(許容差 0.001)。(イベント)
 1.10. システムは、`ColorRect` と `CollisionShape2D` をともに 12×32px とし、ノードの原点を矩形の中心に置かなければならない。(常時)
+1.11. `is_on_floor` が真で `jump_pressed` が偽のコマンドが渡されたとき、システムは垂直の速度を 0 としなければならない(接地中に重力が蓄積しないようにする)。(イベント)
 
 ### Requirement 2: 射撃方向の決定
 
@@ -365,10 +368,10 @@ tests/weapon/   ...
 
 5.1. `launch()` の後、システムは弾を指定された方向へ毎フレーム `speed * delta` だけ進めなければならない。(常時)
 5.2. 弾が地形(レイヤ 1)に触れたとき、システムは弾を解放しなければならない。(イベント)
-5.3. 弾の発射位置からの移動距離が `bullet_max_distance` を超えたとき、システムは弾を解放しなければならない。(イベント)
+5.3. 弾の発射位置からの移動距離が `max_distance` を超えたとき、システムは弾を解放しなければならない。(イベント)
 5.4. システムは、プレイヤーの弾の衝突レイヤを 3、マスクを 1 と 4 としなければならない。(常時)
-5.5. `direction` が `Vector2i.ZERO`、`speed` が 0 以下、または `damage` が 0 以下で `launch()` が呼ばれた場合、システムは弾を進めてはならない。(異常系)
-5.6. システムは、`bullet_max_distance` を `PlayerStats` から受け取らなければならない(弾体に直書きしない)。(常時)
+5.5. `direction` が `Vector2i.ZERO`、`speed` が 0 以下、`damage` が 0 以下、または `max_distance` が 0 以下で `launch()` が呼ばれた場合、システムは弾を進めてはならない。(異常系)
+5.6. システムは、`max_distance` を `launch()` の引数として受け取らなければならない(`Projectile` が `PlayerStats` を参照せず、値の出どころを `PlayerStats` に一本化する)。(常時)
 
 ### Requirement 6: 体力と自動回復
 
@@ -382,9 +385,9 @@ tests/weapon/   ...
 6.4. 最後の被弾から `regen_delay` が経過した後、システムは体力を毎秒 `regen_per_second` だけ回復しなければならない。(状態)
 6.5. 体力が `max_health` に達したとき、システムはそれ以上回復してはならない。(イベント)
 6.6. 体力が 0 になったとき、システムは `Health.depleted` を**ちょうど 1 回**発火しなければならない。体力が 0 の状態で再度 `take_damage()` が呼ばれても発火してはならない。(イベント)
-6.9. `Health.depleted` が発火したとき、システムは `Player.died` を発火しなければならない。(イベント)
-6.7. 体力が 0 になった後、システムは `take_damage()` と `tick()` で状態を変えてはならない。(状態)
-6.8. `take_damage()` に 0 以下の値が渡された場合、システムは状態を変えてはならない。(異常系)
+6.7. `Health.depleted` が発火したとき、システムは `Player.died` を発火しなければならない。(イベント)
+6.8. 体力が 0 になった後、システムは `take_damage()` と `tick()` で状態を変えてはならない。(状態)
+6.9. `take_damage()` に 0 以下の値が渡された場合、システムは状態を変えてはならない。(異常系)
 
 ### Requirement 7: リトライ
 
@@ -393,8 +396,8 @@ tests/weapon/   ...
 **受け入れ基準**:
 
 7.1. システムは、`player.died` を `DevStage` の再読込の処理へ接続しなければならない(接続の有無をシグナルの接続数で検証する)。(常時)
-7.2. `player.died` が発火したとき、システムは `get_tree().reload_current_scene()` を呼ばなければならない。**この基準は自動テストでは検証せず、仮ステージを起動してダメージ領域で体力を 0 にし、ステージが先頭から再開することを目視で確認する**(理由: gdUnit4 のテストツリーで呼ぶと、テストの実行そのものが読み込むシーンを差し替えてしまう)。(イベント)
-7.3. システムは、チェックポイントを表す状態・ノード・設定を持ってはならない(`src/` 以下に checkpoint を含む識別子が存在しないことで検証する)。(常時)
+7.2. `player.died` が発火したとき、システムは `get_tree().reload_current_scene()` を呼ばなければならない。**この基準は自動テストでは検証せず、`godot res://src/stage/dev_stage.tscn` で仮ステージを起動し、ダメージ領域に留まって体力を 0 にしたあと、プレイヤーの位置が初期位置に戻り体力が `max_health` に戻ることを目視で確認する**(理由: gdUnit4 のテストツリーで呼ぶと、テストの実行そのものが読み込むシーンを差し替えてしまう)。(イベント)
+7.3. システムは、リトライの再開位置をステージの先頭以外に切り替える状態・ノード・設定を持ってはならない。(常時)
 
 ### Requirement 8: 入力の読み取り
 
@@ -410,7 +413,7 @@ tests/weapon/   ...
 
 ### Requirement 9: 仮ステージ
 
-**対象**: §5.7 `DevStage` / §5.8 `DamageZone`
+**対象**: §5.7 `DevStage` / §5.8 `DamageZone` / §6.5 衝突レイヤの割り当て
 
 **受け入れ基準**:
 
@@ -419,7 +422,8 @@ tests/weapon/   ...
 9.3. プレイヤーが `DamageZone` に触れている間、システムは 1 秒に 1 回 `take_damage(damage)` を呼ばなければならない。(状態)
 9.4. システムは、仮ステージに `TileMapLayer` を使ってはならない。(常時)
 9.5. システムは、仮ステージの `StaticBody2D` の衝突レイヤを 1、`Player` の衝突レイヤを 2 としなければならない。(常時)
-9.6. システムは、`project.godot` の `run/main_scene` を仮ステージのシーンに設定しなければならない(起動してすぐ動作を確認できるようにするため)。(常時)
+9.6. システムは、`project.godot` の `run/main_scene` を変更してはならない。仮ステージは `godot res://src/stage/dev_stage.tscn` でシーン単体を起動して確認する。`run/main_scene` を差し替えると、`docs/asset-pipeline.md` が定める `godot -- <出力パス>`(`main.tscn` のビューポートを PNG へ保存して終了する)が仮ステージを起動して終了しなくなる。(常時)
+9.7. システムは、仮ステージの起動方法(`godot res://src/stage/dev_stage.tscn`)を `docs/testing.md` に記載しなければならない。(常時)
 
 ### Requirement 10: 数値の集約と敵の設計の上限
 
@@ -434,7 +438,7 @@ tests/weapon/   ...
 
 ### Requirement 11: テストの規約の文書の更新
 
-**対象**: §2 スコープ(対象)/ §6.6 ファイルの配置
+**対象**: §6.6 ファイルの配置(「本単位が更新する文書」)
 
 `docs/specs/test-harness/spec.md` §2 が本単位へ持ち越した 2 件の判断に対応する。
 
@@ -460,4 +464,4 @@ tests/weapon/   ...
 - 企画書 5.(プレイヤー)・6.(武器)・12.(技術方針): workspace リポジトリの `4_artifacts/netdiver/issues/01_game-design-doc/game-design-doc.md`
 - 本単位の位置づけと完了条件: `docs/specs/roadmap.md`
 - テストの書き方と headless の制約: `docs/testing.md`
-- `move_and_slide()` と物理フレームの実測: `docs/specs/test-harness/spec.md` §3
+- `move_and_slide()` と物理フレームの実測: `docs/testing.md` の「物理フレームを進めるテスト」と `docs/specs/test-harness/tasks.md` の `## Implementation Notes`
