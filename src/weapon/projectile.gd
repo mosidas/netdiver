@@ -6,6 +6,13 @@ extends Area2D
 ## 位置の更新は `_physics_process` の中だけで行う。物理フレームの外で位置を進めると
 ## Godot が描画フレームの delta を使い、同じ入力でも変位が定まらない。
 
+const ZERO_DIRECTION_ERROR: String = (
+	"Projectile.launch(): direction は Vector2i.ZERO であってはならない。弾を進めずに返る"
+)
+const INVALID_LAUNCH_VALUE_ERROR_FORMAT: String = (
+	"Projectile.launch(): %s は正でなければならない(現在値: %s)。弾を進めずに返る"
+)
+
 var damage: int = 0
 
 ## 位置を進めた物理フレームの数。
@@ -29,9 +36,24 @@ func _ready() -> void:
 ## 弾を発射する。射程はこの呼び出しの時点の位置から測る。
 ##
 ## 事前条件: 呼び出し側は発射位置を設定してから呼ぶ。発射後に位置を動かすと、その移動分が
-## 射程から差し引かれる。
+## 射程から差し引かれる。`direction` は `Vector2i.ZERO` 以外、`speed`・`damage`・
+## `max_distance` は正。違反した場合は弾を進めずに返る。
 @warning_ignore("shadowed_variable")
 func launch(direction: Vector2i, speed: float, damage: int, max_distance: float) -> void:
+	# ガードを関数の先頭に置く: 後ろに置くと、拒否する前に damage と射程の代入が済んでしまう
+	if direction == Vector2i.ZERO:
+		push_error(ZERO_DIRECTION_ERROR)
+		return
+	if speed <= 0.0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["speed", speed])
+		return
+	if damage <= 0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["damage", damage])
+		return
+	if max_distance <= 0.0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["max_distance", max_distance])
+		return
+
 	self.damage = damage
 	_max_distance = max_distance
 	# 生成時の位置を基準にしない: 呼び出し側は生成してから発射位置を決めるため基準がずれる

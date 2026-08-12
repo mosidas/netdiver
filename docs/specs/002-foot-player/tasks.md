@@ -135,7 +135,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 実装の要点: `await assert_error(...)` で `push_error` を、戻り値で `Vector2i(1, 0)` を検証する
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-- [ ] 4. (P) 弾体
+- [x] 4. (P) 弾体
   - [x] 4.1 `Projectile` と `projectile.tscn` を新規作成し、`launch()` 後の直進と衝突レイヤ・マスクを検証する
     _Requirements: 5.1, 5.4, 5.6_
     _Boundary: Projectile_
@@ -154,7 +154,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §5.6
     - 実装の要点: 地形は `StaticBody2D`(`PhysicsBody2D`)であり `Area2D` ではないため、検出は `body_entered` を使う(`area_entered` では発火しない)。テストは `StaticBody2D`(layer 1)を弾の進路に置いて解放を確かめる。解放の確認は `is_instance_valid()` で行い、`queue_free()` の反映を待つ
     - 検証コマンド: `make test TESTS=res://tests/weapon`
-  - [ ] 4.3 `launch()` の異常系(`direction` が `Vector2i.ZERO`、`speed`・`damage`・`max_distance` が 0 以下)を実装する
+  - [x] 4.3 `launch()` の異常系(`direction` が `Vector2i.ZERO`、`speed`・`damage`・`max_distance` が 0 以下)を実装する
     _Requirements: 5.5_
     _Boundary: Projectile_
     _Depends: 4.2_
@@ -328,6 +328,8 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **射程の基準は `launch()` を呼んだ時点の位置**(タスク 4.2)。`launch()` の doc コメントに事前条件として明記した。**発射位置を決めてから `launch()` を呼ぶこと。** 生成 → `add_child` → `launch()` → 位置設定 の順に書くと、移動分が射程から差し引かれて要件 5.3 が沈黙のうちに壊れる(タスク 5.3 の `Player` からの生成で踏みやすい)。
 - **距離を検証するテストは斜めを軸方向と別のケースにする**(タスク 4.2 のレビューで [Critical] 1 件)。`position.distance_to(_launch_position)` を `absf(position.x - _launch_position.x)` へ置き換える変異が、軸方向(`Vector2i(1, 0)`)のケースだけでは 13/13 素通りした(斜めでは射程が √2 倍になる = 要件 5.3 違反)。斜めのケースを 1 件足して変異が落ちることを実測で確認済み。**8 方向が中核の本単位では、距離・速さ・射程を検証するテストに斜めのケースを必ず含めること。**
 - **`Projectile` は mask に載るすべての body で解放される**(タスク 4.2)。`_on_body_entered` は body の種別を見ない。`projectile.tscn` の mask は 1(地形)と 4(敵)であり、spec §5.6 は地形しか書いていないが、敵に当たった弾も解放される。**`foot-enemies`(unit #3)が被弾処理を足すときは、この解放が既にあることを前提にすること**(二重に `queue_free()` しない)。
+- **拒否時に「状態を変えていない」ことをアサーションに含める**(タスク 4.3)。`launch()` の異常系で `damage` が 0 のままであることを検証すると、「ガードを関数の先頭に置く」規律が変異で観測できる(ガードを代入の後ろへ移す変異が落ちる)。**異常値の表に負値を含めること**: 0 だけだと代入が起きても既定値の 0 と区別できず素通りする。後続の `PrimaryWeapon`・`SecondaryWeapon`・`Health` の異常系でも同じ形を採ること。
+- **`launch()` は複数の引数が同時に異常でも、最初に検出した 1 件だけを `push_error` して返る**(タスク 4.3)。spec §5.6 は評価の順序を定めておらず、順序を契約として固定しないためテストを置いていない(レビューの [Nit] を意図的に見送り)。**タスク 5.3 で `Player` が複数の異常値を渡すと 1 件しかエラーが出ない。**
 - **テストは既定値のままの `stats` に頼らない**(タスク 1.3 のレビュー指摘)。`move_speed` を既定の 100.0 のままで検証すると、実装が `stats` を読まず 100.0 を直書きしても緑になる。`PlayerStats.new()` に既定と異なる値(例: 250.0)を入れて `player.stats` へ差し替えてから検証すると、要件 10.2(値の出どころの一本化)の退行も捕捉できる。後続の `Player` 系タスク(2.1〜2.3・5.3・6.3)はこの形を採ること。
 </content>
 </invoke>

@@ -14,6 +14,20 @@ const LAUNCH_PARAMETERS: Array = ["direction", "speed", "damage", "max_distance"
 const SPEED: float = 180.0
 const DAMAGE: int = 7
 const MAX_DISTANCE: float = 400.0
+# 実装の定数を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const ZERO_DIRECTION_ERROR: String = (
+	"Projectile.launch(): direction は Vector2i.ZERO であってはならない。弾を進めずに返る"
+)
+const INVALID_LAUNCH_VALUE_ERROR_FORMAT: String = (
+	"Projectile.launch(): %s は正でなければならない(現在値: %s)。弾を進めずに返る"
+)
+const INVALID_SPEEDS: Array[float] = [0.0, -SPEED]
+const INVALID_DAMAGES: Array[int] = [0, -DAMAGE]
+const INVALID_MAX_DISTANCES: Array[float] = [0.0, -MAX_DISTANCE]
+# 境界のすぐ内側の値。ガードが 0 より広い範囲へ伸びたことを検出する
+const SMALLEST_SPEED: float = 1.0
+const SMALLEST_DAMAGE: int = 1
+const SMALLEST_MAX_DISTANCE: float = 1.0
 # 弾が数フレームで届く位置に置く: 待ちの間に必ず接触させ、通り抜けの検証でも余裕を残す
 const TERRAIN_POSITION: Vector2 = Vector2(20.0, 0.0)
 const TERRAIN_SIZE: Vector2 = Vector2(16.0, 16.0)
@@ -224,6 +238,79 @@ func test_max_distance_is_measured_from_the_launch_position() -> void:
 	)
 
 
+func test_launch_rejects_a_zero_direction() -> void:
+	var projectile: Projectile = _create_projectile()
+	add_child(projectile)
+
+	await assert_error(
+		func() -> void: projectile.launch(Vector2i.ZERO, SPEED, DAMAGE, MAX_DISTANCE)
+	).is_push_error(ZERO_DIRECTION_ERROR)
+
+	await _assert_stays_in_place([projectile])
+
+
+func test_launch_rejects_a_speed_that_is_not_positive() -> void:
+	var projectiles: Array[Projectile] = []
+
+	for speed: float in INVALID_SPEEDS:
+		var projectile: Projectile = _create_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["speed", speed]
+
+		await assert_error(
+			func() -> void: projectile.launch(Vector2i(1, 0), speed, DAMAGE, MAX_DISTANCE)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+func test_launch_rejects_a_damage_that_is_not_positive() -> void:
+	var projectiles: Array[Projectile] = []
+
+	for damage: int in INVALID_DAMAGES:
+		var projectile: Projectile = _create_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["damage", damage]
+
+		await assert_error(
+			func() -> void: projectile.launch(Vector2i(1, 0), SPEED, damage, MAX_DISTANCE)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+func test_launch_rejects_a_max_distance_that_is_not_positive() -> void:
+	var projectiles: Array[Projectile] = []
+
+	for max_distance: float in INVALID_MAX_DISTANCES:
+		var projectile: Projectile = _create_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["max_distance", max_distance]
+
+		await assert_error(
+			func() -> void: projectile.launch(Vector2i(1, 0), SPEED, DAMAGE, max_distance)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+# 正常系を境界のすぐ内側で通す: 拒否の範囲が 0 より広がる変異を、異常系のケースでは検出できない
+func test_launch_accepts_the_smallest_positive_arguments() -> void:
+	var projectile: Projectile = _create_projectile()
+	add_child(projectile)
+
+	await assert_error(
+		func() -> void: projectile.launch(
+			Vector2i(1, -1), SMALLEST_SPEED, SMALLEST_DAMAGE, SMALLEST_MAX_DISTANCE
+		)
+	).is_success()
+
+	assert_int(projectile.damage).is_equal(SMALLEST_DAMAGE)
+
+
 func _create_projectile() -> Projectile:
 	return auto_free(PROJECTILE_SCENE.instantiate())
 
@@ -240,6 +327,25 @@ func _create_terrain(layer: int) -> StaticBody2D:
 	collision_shape.shape = rectangle
 	terrain.add_child(collision_shape)
 	return terrain
+
+
+# 拒否された弾が進まないことを確かめる。待ちの間に物理フレームが進んだことは、
+# 同じ待ちの中で発射済みの弾が動いたことで示す
+func _assert_stays_in_place(projectiles: Array[Projectile]) -> void:
+	var witness: Projectile = _create_projectile()
+	add_child(witness)
+
+	witness.launch(Vector2i(1, 0), SPEED, DAMAGE, MAX_DISTANCE)
+	await await_millis(WAIT_MILLIS)
+
+	assert_int(witness.frames_moved).is_greater(0)
+	for index: int in projectiles.size():
+		var projectile: Projectile = projectiles[index]
+		var context: String = "index=%s" % index
+		assert_int(projectile.frames_moved).append_failure_message(context).is_zero()
+		assert_vector(projectile.position).append_failure_message(context).is_equal(Vector2.ZERO)
+		# 引数を取り込んでいないことも見る: ガードが代入より後ろにあると damage が残る
+		assert_int(projectile.damage).append_failure_message(context).is_zero()
 
 
 # 解放後は位置を読めないため、ツリーを離れる直前の位置を控える
