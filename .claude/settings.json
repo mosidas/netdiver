@@ -4,5 +4,27 @@
       "Bash(godot:*)",
       "Bash(/opt/homebrew/bin/godot:*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/skills/ext-dev-guardrails/hooks/guard_bash.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/skills/ext-dev-guardrails/hooks/guard_write.py"
+          }
+        ]
+      }
+    ]
   }
 }

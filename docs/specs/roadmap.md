@@ -1,6 +1,6 @@
 # netdiver MVP roadmap
 
-企画書「9. MVP(最初に完成させる最小範囲)」の範囲を、7 つの作業単位(unit)へ分解した一覧である。各 unit は `docs/specs/<unit>/` を workdir とし、仕様 → タスク分解 → 実装の順に駆動する。
+企画書「9. MVP(最初に完成させる最小範囲)」の範囲を、7 つの作業単位(unit)へ分解した一覧である。各 unit は `docs/specs/NNN-<unit>/` を workdir とし、仕様 → タスク分解 → 実装の順に駆動する。`NNN` は unit の開始時にエンジンが採番する 3 桁の連番である。
 
 企画書の本体は workspace リポジトリの `4_artifacts/netdiver/issues/01_game-design-doc/game-design-doc.md` にある。本書は企画書の内容を再記述せず、章番号で参照する。作業記録は workspace の `1_issues/netdiver/007-mvp-core-loop/` に置く。
 
