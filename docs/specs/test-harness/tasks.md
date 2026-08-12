@@ -116,8 +116,8 @@
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 のエラー表、§7 Requirement 4
     - 検証コマンド(2 本): `./scripts/run_tests.sh; test $? -eq 0 && echo OK`(全成功)、`printf 'extends GdUnitTestSuite\n\nfunc test_fail() -> void:\n\tassert_int(1).is_equal(2)\n' > tests/harness/tmp_fail_test.gd; ./scripts/run_tests.sh; test $? -eq 100 && echo OK; rm tests/harness/tmp_fail_test.gd`(失敗の透過)
-  - [x] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す
-    _Requirements: 4.2, 4.6, 4.7_
+  - [ ] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す。件数が 1 以上でも、`Unknown test case argument` を理由とするスキップが 1 件以上あれば同じく終了コード 1 を返す
+    _Requirements: 4.2, 4.6, 4.7, 4.8_
     _Boundary: RunScript_
     _Depends: 4.2_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
@@ -125,6 +125,7 @@
     - 検証コマンド(2 本):
       - 4.2(0 件): `./scripts/run_tests.sh res://tests/does_not_exist; test $? -eq 1 && echo OK`
       - 4.6(パースエラーのみ): `mkdir -p tests/tmp_broken && printf 'extends GdUnitTestSuite\n\nfunc test_x() -> void:\n\tthis is not valid\n' > tests/tmp_broken/broken_test.gd; ng=0; for i in 1 2 3; do ./scripts/run_tests.sh res://tests/tmp_broken; test $? -eq 0 && ng=1; done; rm -r tests/tmp_broken; test $ng -eq 0 && echo OK`(3 回とも 0 以外であること。spec.md §3 のとおり終了コードは 1 と 105 に割れるため、0 が出ないことを条件にする)
+      - 4.8(成功と打ち間違いの混在): `mkdir -p tests/tmp_mix && printf 'extends GdUnitTestSuite\n\nfunc test_typo(timout = 5000) -> void:\n\tassert_int(1).is_equal(2)\n\nfunc test_ok() -> void:\n\tassert_int(1).is_equal(1)\n' > tests/tmp_mix/mix_test.gd; ./scripts/run_tests.sh res://tests/tmp_mix; rc=$?; rm -rf tests/tmp_mix; test $rc -eq 1 && echo OK`(成功するケースがあっても打ち間違いを見逃さないこと)
       - 4.7(全件スキップ): `mkdir -p tests/tmp_skip && printf 'extends GdUnitTestSuite\n\nfunc test_x(timout = 5000) -> void:\n\tassert_int(1).is_equal(2)\n' > tests/tmp_skip/skip_test.gd; ./scripts/run_tests.sh res://tests/tmp_skip; rc=$?; rm -rf tests/tmp_skip; test $rc -eq 1 && echo OK`(引数名の打ち間違いで gdUnit4 が skip 扱いにするスイート。スキップを「実行された」に数える実装はここで落ちる)
   - [x] 4.4 gdUnit4 の起動を 120 秒のタイムアウトで包み(取得とインポートは含めない)、超過時に終了コード 124 を返す。秒数はスクリプト内の定数 `TIMEOUT_SECONDS` に置く(spec.md §5.2 は実行スクリプトの入力を第 1 引数のみと定めているため、上書き用の環境変数を設けない)
     _Requirements: 8.1, 8.2_
@@ -175,13 +176,13 @@
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
 - [x] 8. 終了コードの契約の自己検査
-  - [x] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 4 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えない
-    _Requirements: 10.2, 10.3, 10.4, 10.5, 10.6_
+  - [ ] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 7 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えず、終了時に一時ディレクトリを削除する
+    _Requirements: 10.2, 10.3, 10.4, 10.5, 10.6, 10.8, 10.9_
     _Boundary: SelfCheck_
     _Depends: 4.4_
     - 対象ファイル: `scripts/selfcheck_run_tests.sh`(新規)
     - 仕様参照: spec.md §5.6
-    - 検証コマンド(**bash で実行する**): `cp -R reports /tmp/rep.orig 2>/dev/null; ./scripts/selfcheck_run_tests.sh; rc=$?; test $rc -eq 0 && echo OK`(4 項目すべてが期待どおり)、`diff -rq reports /tmp/rep.orig >/dev/null 2>&1 && echo REPORTS_UNTOUCHED_OK; rm -rf /tmp/rep.orig`(10.5。リポジトリの `reports/` を書き換えないこと)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's|^  return "${status}"$|  return 0|' scripts/run_tests.sh; ./scripts/selfcheck_run_tests.sh >/dev/null 2>/tmp/e.txt; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 1 && echo DETECTS_REGRESSION_OK`(10.6。終了コードの透過を壊すと検査が失敗すること。`sed` のパターンは実装に合わせて調整する)
+    - 検証コマンド(**bash で実行する**): `cp -R reports /tmp/rep.orig 2>/dev/null; ./scripts/selfcheck_run_tests.sh; rc=$?; test $rc -eq 0 && echo OK`(7 項目すべてが期待どおり)、`diff -rq reports /tmp/rep.orig >/dev/null 2>&1 && echo REPORTS_UNTOUCHED_OK; rm -rf /tmp/rep.orig`(10.5。リポジトリの `reports/` を書き換えないこと)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's|^  return "${status}"$|  return 0|' scripts/run_tests.sh; ./scripts/selfcheck_run_tests.sh >/dev/null 2>/tmp/e.txt; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 1 && echo DETECTS_REGRESSION_OK`(10.6。終了コードの透過を壊すと検査が失敗すること。`sed` のパターンは実装に合わせて調整する)、`before=$(ls -d ${TMPDIR}tmp.* 2>/dev/null | wc -l); ./scripts/selfcheck_run_tests.sh >/dev/null 2>&1; after=$(ls -d ${TMPDIR}tmp.* 2>/dev/null | wc -l); test "$before" -eq "$after" && echo TMPDIR_CLEAN_OK`(10.9。一時ディレクトリが残らないこと)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's/ --continue//' scripts/run_tests.sh; ./scripts/selfcheck_run_tests.sh >/dev/null 2>&1; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 1 && echo DETECTS_CONTINUE_LOSS_OK`(10.8)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's|^  if ! rm -rf "${REPORTS_DIR}".*$|  rm -rf "${REPORTS_DIR}" \|\| true; if false; then|' scripts/run_tests.sh; ./scripts/selfcheck_run_tests.sh >/dev/null 2>&1; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 1 && echo DETECTS_RM_FAILURE_LOSS_OK`(7.6 の回帰検査。`sed` のパターンは実装に合わせて調整する)
   - [x] 8.2 `Makefile` に `selfcheck` ターゲットを追加し、CI のステップとして常時実行する
     _Requirements: 10.1, 10.7_
     _Boundary: Makefile_
