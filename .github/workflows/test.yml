@@ -23,7 +23,7 @@ jobs:
           godot --version
 
       - name: Run tests
-        run: make test TESTS=res://tests/does_not_exist
+        run: make test
 
       # テストが失敗した回のレポートこそ調査に使うため、成否によらずアップロードする
       - name: Upload reports
