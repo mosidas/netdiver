@@ -9,6 +9,8 @@ extends CharacterBody2D
 
 @export var stats: PlayerStats
 
+var facing: int = 1
+
 ## 入力の差し替え点。headless では `InputEvent` がエンジンを通らず `Input` を経由した
 ## 検証ができないため、テストが差し替えられるよう契約の一部として公開する
 var input_source: Callable = PlayerInput.read
@@ -16,6 +18,11 @@ var input_source: Callable = PlayerInput.read
 
 func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
 	velocity.x = cmd.move_x * stats.move_speed
+
+	if not is_zero_approx(cmd.move_x):
+		# signi() に float を渡さない: 切り捨てを経るため ±1 以外の move_x で 0 になり、
+		# facing が -1 または 1 という不変条件が壊れる
+		facing = int(signf(cmd.move_x))
 
 
 func _physics_process(delta: float) -> void:

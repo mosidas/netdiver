@@ -55,7 +55,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 ## タスク一覧
 
-- [ ] 1. 入力の契約と `Callable` 差し替えの成立確認(リスク先行)
+- [x] 1. 入力の契約と `Callable` 差し替えの成立確認(リスク先行)
 
   spec.md §3 の未検証の前提のうち「`Callable` を差し替える形の入力の注入が Godot 4.7.1 の headless で機能する」を最初に確かめる。この前提が崩れると要件 8 と、要件 1.9 を含む検証方法の大半が組み替えになるため、他のどのタスクよりも前に置く。分解時に一時プロジェクトで予備検証を済ませており(`godot --headless --script` で、static メソッドを `Callable` の既定値にできること・差し替えた `Callable` が `_physics_process` 経由で速度に反映されることを確認した)、本タスクはそれを **gdUnit4 のテストツリー上で**再現することが目的である。予備検証は差し替え先に lambda を使ったが、テストでは lambda を使わない(1.3 の実装の要点を参照。差し替え自体は lambda でも成立するが、キャプチャが値コピーのため呼び出し回数を観測できない)。
 
@@ -91,7 +91,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 検証コマンド: `make test TESTS=res://tests/player`、`grep -n 'move_and_slide' src/player/player.gd > /tmp/mas.txt; cat /tmp/mas.txt`(出現が `_physics_process` の中の 1 箇所だけであること)
 
 - [ ] 2. 移動・ジャンプ・向きの速度計算
-  - [ ] 2.1 `move_x` による水平の速度の停止と `facing` の更新を実装する
+  - [x] 2.1 `move_x` による水平の速度の停止と `facing` の更新を実装する
     _Requirements: 1.2, 1.6, 1.7_
     _Boundary: Player_
     _Depends: 1.3_
@@ -305,6 +305,8 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **注入用スタブは `GDScript.new()` + `source_code` で作る**(タスク 1.3、`tests/harness/scene_test.gd` と同じ形)。lambda はローカル変数を値コピーで捕捉するため呼び出し回数を観測できない。状態(`call_count` / `move_frames`)を持つ `RefCounted` のメソッドを渡し、**規定回数を超えたら既定値の `PlayerCommand` を返す**ようにする(`await await_millis(500)` では約 30 物理フレームが進むため)。動的スクリプトからグローバルな `class_name` は解決できる。
 - **`Player` に `frames_to_move` 相当の停止機構は無い**(タスク 1.3、spec §5.1 の責務に無いため)。物理フレームを使う後続テストは注入側で入力を止めること。
 - **`player.tscn` のノード名**(タスク 1.3): `Placeholder`(`ColorRect`)と `CollisionShape2D`。テストがこの名前で参照している。`stats` は埋め込みサブリソースで、`resource_local_to_scene` を付けていないため複数インスタンス化すると共有される。
+- **`facing` の算出は `signi()` ではなく `int(signf())` を使った**(タスク 2.1)。spec §7 1.6 は `signi(move_x)` と書くが、`signi()` は int を取るため float を渡すと切り捨てが挟まり、実測で `signi(0.5) = 0`・`signi(0.9) = 0` となって §5.1 の不変条件(`facing` は -1 または 1)を破る。§5.2 の事後条件が保証する定義域 {-1.0, 0.0, 1.0} では両者は完全に一致するため、契約内の振る舞いに差はない。ゼロ判定も `is_zero_approx()` を使う。
+- **`delta <= 0.0` の早期 return を足すとき(タスク 2.3)は、`facing` の更新をその return より後ろに置く**(タスク 2.1 の申し送り)。
 - **テストは既定値のままの `stats` に頼らない**(タスク 1.3 のレビュー指摘)。`move_speed` を既定の 100.0 のままで検証すると、実装が `stats` を読まず 100.0 を直書きしても緑になる。`PlayerStats.new()` に既定と異なる値(例: 250.0)を入れて `player.stats` へ差し替えてから検証すると、要件 10.2(値の出どころの一本化)の退行も捕捉できる。後続の `Player` 系タスク(2.1〜2.3・5.3・6.3)はこの形を採ること。
 </content>
 </invoke>
