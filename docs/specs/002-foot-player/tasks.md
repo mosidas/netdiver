@@ -73,7 +73,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §5.2 のアクション表、§6.5 のレイヤ割り当て
     - 実装の要点: `PlayerInput.read()` の戻り値の型は 1.1 が作る `PlayerCommand` であり、`(P)` は 1.1 の完了後に他の (P) タスクと並行できることを意味する(1.1 より先には走らせない)
     - 検証コマンド: `ng=0; for a in move_left move_right aim_up aim_down jump fire_primary fire_secondary; do grep -q "^$a=" project.godot || { echo "NG: $a"; ng=1; }; done; test $ng -eq 0 && echo OK`(7 件すべてが定義されていること。欠落は全件を報告する)、`grep -q 'run/main_scene="res://main.tscn"' project.godot && echo OK`(要件 9.6 の前提を壊していないこと)
-  - [ ] 1.3 `Player` の骨格(`input_source`・`apply_command()` の水平移動・`_physics_process` からの `move_and_slide()`)と `player.tscn` を作り、シーンツリー上で `input_source` を差し替えて 3 物理フレーム進め、水平の位置を検証する
+  - [x] 1.3 `Player` の骨格(`input_source`・`apply_command()` の水平移動・`_physics_process` からの `move_and_slide()`)と `player.tscn` を作り、シーンツリー上で `input_source` を差し替えて 3 物理フレーム進め、水平の位置を検証する
     _Requirements: 1.1, 1.9, 1.10, 8.2, 8.3, 8.4, 8.5_
     _Boundary: Player_
     _Depends: 1.1, 1.2_
@@ -301,5 +301,10 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **衝突レイヤ名を `project.godot` に定義済み**(タスク 1.2): `2d_physics/layer_1..5` = `terrain` / `player` / `player_projectile` / `enemy` / `enemy_projectile`。
 - **入力は `physical_keycode` で登録した**(タスク 1.2)。キーボードレイアウトに依存させないため。`InputEventKey.new()` の既定 `device` は 16 なので、エディタ生成物に合わせて -1 を明示する必要がある。
 - **`Input.is_action_just_pressed()` は物理フレームと描画フレームで別々に判定される**(タスク 1.2)。`PlayerInput.read()` は `_physics_process` からのみ呼ぶこと。`_process` からも呼ぶと `jump_pressed` の取りこぼしが起きる。
+- **spec §3 の未検証の前提「`Callable` の差し替えによる入力の注入が Godot 4.7.1 の headless で機能する」は成立した**(タスク 1.3、gdUnit4 のテストツリー上で実測)。`var input_source: Callable = PlayerInput.read` を宣言でき、`get_object()` は `PlayerInput` の GDScript リソースを返す。注入した `Callable` の呼び出し回数 30・最終位置 5.0px(期待値 `move_speed / physics_ticks_per_second * 3` と一致)。要件 8 と検証方法の組み替えは不要。
+- **注入用スタブは `GDScript.new()` + `source_code` で作る**(タスク 1.3、`tests/harness/scene_test.gd` と同じ形)。lambda はローカル変数を値コピーで捕捉するため呼び出し回数を観測できない。状態(`call_count` / `move_frames`)を持つ `RefCounted` のメソッドを渡し、**規定回数を超えたら既定値の `PlayerCommand` を返す**ようにする(`await await_millis(500)` では約 30 物理フレームが進むため)。動的スクリプトからグローバルな `class_name` は解決できる。
+- **`Player` に `frames_to_move` 相当の停止機構は無い**(タスク 1.3、spec §5.1 の責務に無いため)。物理フレームを使う後続テストは注入側で入力を止めること。
+- **`player.tscn` のノード名**(タスク 1.3): `Placeholder`(`ColorRect`)と `CollisionShape2D`。テストがこの名前で参照している。`stats` は埋め込みサブリソースで、`resource_local_to_scene` を付けていないため複数インスタンス化すると共有される。
+- **テストは既定値のままの `stats` に頼らない**(タスク 1.3 のレビュー指摘)。`move_speed` を既定の 100.0 のままで検証すると、実装が `stats` を読まず 100.0 を直書きしても緑になる。`PlayerStats.new()` に既定と異なる値(例: 250.0)を入れて `player.stats` へ差し替えてから検証すると、要件 10.2(値の出どころの一本化)の退行も捕捉できる。後続の `Player` 系タスク(2.1〜2.3・5.3・6.3)はこの形を採ること。
 </content>
 </invoke>
