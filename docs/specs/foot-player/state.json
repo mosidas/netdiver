@@ -1,0 +1,11 @@
+{
+  "workflow": "sdd",
+  "unit": "foot-player",
+  "state": "initialized",
+  "approvals": {
+    "spec": false,
+    "tasks": false
+  },
+  "created": "2026-08-12",
+  "updated": "2026-08-12"
+}
