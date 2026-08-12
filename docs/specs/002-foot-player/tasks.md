@@ -136,7 +136,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 検証コマンド: `make test TESTS=res://tests/player`
 
 - [ ] 4. (P) 弾体
-  - [ ] 4.1 `Projectile` と `projectile.tscn` を新規作成し、`launch()` 後の直進と衝突レイヤ・マスクを検証する
+  - [x] 4.1 `Projectile` と `projectile.tscn` を新規作成し、`launch()` 後の直進と衝突レイヤ・マスクを検証する
     _Requirements: 5.1, 5.4, 5.6_
     _Boundary: Projectile_
     - 対象ファイル: `src/weapon/projectile.gd`(新規), `src/weapon/projectile.tscn`(新規), `tests/weapon/projectile_test.gd`(新規)
@@ -314,6 +314,10 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **分岐の条件に複合述語があるときは、フラグごとに到達可能な出力の表を厳密比較で回す**(タスク 3.1 のレビューで [Critical] 1 件。自己修復 1 回で解消)。`if is_on_floor and direction.y > 0:` の片側(下向き)だけを厳密比較しても、条件を `if is_on_floor:` へ広げる変異が素通りした(接地時の上撃ち・斜め上撃ちが未検証だった)。総当たりループが弱いアサーション(非 ZERO・範囲内)しか持たないと穴を塞げない。**後続の `PrimaryWeapon`・`SecondaryWeapon`・`Health` の状態分岐でも同じ穴が出やすい。**
 - **事後条件は集合への所属で表せる**(タスク 3.1)。`assert_array(EIGHT_DIRECTIONS).contains([direction])` は「非 ZERO・範囲内」より厳密に強い。`contains` は期待値を配列で受け、`Array[Vector2i]` の const と併用できる。
 - **gdUnit4 の統計の `failures` は失敗ケース数ではなく失敗アサーション数**(タスク 3.1)。ループ内で複数落ちると 1 ケースでも複数に数えられる。
+- **`Projectile` に `frames_moved: int` を公開した(spec §5.6 に無い契約の追加。レビュー通過)**(タスク 4.1)。`Player.input_source` と同じ「テストのための公開点」である。`Engine.get_physics_frames()` の差分や `await physics_frame` の待機回数では、ツリーへの追加時刻とフレーム境界の関係で 1 フレームずれるため(実測: awaited=10 に対し node_frames=9 になる回がある)、「待ちが足りずに進まなかった」と「進まないことが正しい」を区別できない。`tests/harness/scene_test.gd` の `frames_to_move` と同じ形。**`foot-enemies`(unit #3)以降が `Projectile` を再利用するときは、この公開点も契約の一部として扱うこと。**
+- **`projectile.tscn` の placeholder と衝突矩形は 4×4px、原点は矩形の中心**(タスク 4.1。spec が定めていない決定)。根拠: タイル 16px の 1/4、`Player` 12×32px と同じ「偶数寸法・原点は矩形中心」の流儀、`snap_2d_transforms_to_pixel = true` の下で中心合わせのオフセット(±2)を整数に保つため。**弾の当たり判定の寸法はタスク 4.2 の地形衝突と unit #3 の被弾判定に効く。**
+- **衝突ビットの換算**(タスク 4.1、Godot 4.7.1 で実測確認): レイヤ番号は 1 始まり、`collision_layer`/`collision_mask` は 0 始まりのビットマスク。layer 3 → `1 << 2` = 4。mask 1 と 4 → `(1 << 0) | (1 << 3)` = 9。
+- **`launch()` の第 3 引数はメンバ `damage` と同名**(spec §5.6 のシグネチャどおり)。`@warning_ignore("shadowed_variable")` + `self.damage = damage` で解決している。
 - **異常系のテストは、実装の定数・文言をテストから参照しない**(タスク 3.1・3.2)。エラー文言と退避先の値はテスト側に二重に持つ。実装の定数を参照するとアサーションが自明化し、文言の退行を検出できない(実測: 文言だけを書き換える変異でテスト 6 件が落ちる形になっている)。
 - **事前条件のガードは関数の先頭に置く**(タスク 3.2)。「入力の有無で分岐する」ドリフトとの差がテストで観測できる。この差を縛るには、異常な引数を入力の総当たりと組み合わせて厳密比較する表が要る。
 - **`assert_error(...)` はループの中でも `await` ごとに独立して評価できる**(タスク 3.2)。1 テストケース内で異常値を回して複数回 `await ...is_push_error(...)` する形が使える(引数を取るテストケースを書かない規約と両立する)。正常系に `is_success()` を置くと、ガードが広がりすぎる変異(条件の反転・範囲の拡大)を検出できる。
