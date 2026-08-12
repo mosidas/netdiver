@@ -133,7 +133,7 @@
     - 検証コマンド(**bash で実行する**): `grep -q '^TIMEOUT_SECONDS=120$' scripts/run_tests.sh && echo OK`(既定値)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's/^TIMEOUT_SECONDS=120$/TIMEOUT_SECONDS=1/' scripts/run_tests.sh; ./scripts/run_tests.sh; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 124 && echo OK`(定数を一時的に 1 秒へ下げて超過させ、確認後に復元する。`sed -i ''` は BSD sed 専用のため `sed -i.bak` を使う)
 
 - [ ] 5. `make test` の入口
-  - [ ] 5.1 `Makefile` に `test` ターゲットを追加する。`TESTS` 変数で対象を切り替え、終了コードをそのまま伝え、既定ターゲット `all` に依存させない。版の値を書かない
+  - [x] 5.1 `Makefile` に `test` ターゲットを追加する。`TESTS` 変数で対象を切り替え、終了コードをそのまま伝え、既定ターゲット `all` に依存させない。版の値を書かない
     _Requirements: 1.1, 2.1, 2.2, 2.3, 2.4, 2.6_
     _Boundary: Makefile_
     _Depends: 4.4_
