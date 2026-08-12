@@ -67,7 +67,7 @@
     - 仕様参照: spec.md §5.4「ノードの後始末」「物理フレームの進行」
     - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt && echo OK`(統計行の `0 orphans` は gdUnit4 v6.2.0 の出力で確認済みの表記。書式が変わっていた場合は統計行の orphans の値が 0 であることを読み替えて判定する)
 
-- [ ] 3. 実行スクリプトの前提整備
+- [x] 3. 実行スクリプトの前提整備
   - [x] 3.1 `scripts/run_tests.sh` を新規作成し、Godot の解決と `timeout` の解決を**それぞれ独立した異常系**として実装する。どちらか一方が欠けても標準エラーへ出力して終了コード 1 で終わる。`timeout` の不在時は入手方法(Homebrew の `coreutils`)も出す
     _Requirements: 3.4, 3.6_
     _Boundary: RunScript_
@@ -84,7 +84,7 @@
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 1
     - 検証コマンド(2 本): `rm -rf addons/gdUnit4 && ./scripts/run_tests.sh; test -f addons/gdUnit4/plugin.cfg && echo OK`(未取得の状態から取得されること)、`./scripts/run_tests.sh | grep -q 'skipped' && echo OK`(取得済みの状態でも取得スクリプトが呼ばれ、1.1 が定めた `skipped` の出力が現れること。条件付きで呼ぶ実装はこの 2 本目を通らない)
-  - [ ] 3.3 実行のたびに `--headless --import` でクラスキャッシュを生成し直す。生成に失敗したらテストを実行せず終了コード 1 で終わる
+  - [x] 3.3 実行のたびに `--headless --import` でクラスキャッシュを生成し直す。生成に失敗したらテストを実行せず終了コード 1 で終わる
     _Requirements: 3.1, 3.5_
     _Boundary: RunScript_
     _Depends: 3.1_
@@ -101,8 +101,8 @@
     - 仕様参照: spec.md §5.2 の定義と入力
     - 検証コマンド: `./scripts/run_tests.sh res://tests/harness | grep -q 'res://tests/harness' && echo OK`(引数を渡した場合)、`./scripts/run_tests.sh | grep -q 'res://tests$' && echo OK`(省略した場合の既定値)
 
-- [ ] 4. 実行スクリプトのテスト実行と終了コードの確定
-  - [ ] 4.1 gdUnit4 の実行前に `reports/` を削除し(削除に失敗したらテストを実行せず終了コード 1 で終わる)、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
+- [x] 4. 実行スクリプトのテスト実行と終了コードの確定
+  - [x] 4.1 gdUnit4 の実行前に `reports/` を削除し(削除に失敗したらテストを実行せず終了コード 1 で終わる)、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
     _Requirements: 3.2, 3.3, 7.1, 7.5, 7.6_
     _Boundary: RunScript_
     _Depends: 3.3, 3.4, 2.1_
@@ -116,7 +116,7 @@
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 のエラー表、§7 Requirement 4
     - 検証コマンド(2 本): `./scripts/run_tests.sh; test $? -eq 0 && echo OK`(全成功)、`printf 'extends GdUnitTestSuite\n\nfunc test_fail() -> void:\n\tassert_int(1).is_equal(2)\n' > tests/harness/tmp_fail_test.gd; ./scripts/run_tests.sh; test $? -eq 100 && echo OK; rm tests/harness/tmp_fail_test.gd`(失敗の透過)
-  - [ ] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す
+  - [x] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す
     _Requirements: 4.2, 4.6, 4.7_
     _Boundary: RunScript_
     _Depends: 4.2_
@@ -150,7 +150,7 @@
     - 仕様参照: spec.md §7 Requirement 8.3
     - 検証コマンド: `time make test`(real が 30 秒以下であること)
 
-- [ ] 6. CI ワークフロー
+- [x] 6. CI ワークフロー
   - [x] 6.1 `.github/workflows/test.yml` を新規作成する。`pull_request` と `main` への `push` で起動し、Godot 4.7.1 の Linux ビルドを URL 固定で取得して `make test` を実行する。Godot の取得はテスト実行とは別のステップに分ける。版の値を書かない
     _Requirements: 1.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
     _Boundary: CI_
@@ -164,7 +164,7 @@
       - 1.1(版の値を書かない): `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
       - 6.5: 意図的に失敗するテストを 1 件足した状態で push し、`gh pr checks` が失敗することを確認してから戻す
       - 6.6: Godot の取得 URL を一時的に存在しない値へ変えて push し、失敗するステップが取得のステップであることを `gh run view --log-failed` で確認してから戻す
-  - [ ] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
+  - [x] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
     _Requirements: 7.2, 7.3, 7.4_
     _Boundary: CI_
     _Depends: 6.1_
@@ -174,15 +174,15 @@
       - 7.2・7.3: `test "$(grep -c 'uses: actions/upload-artifact' .github/workflows/test.yml)" -eq 1 && grep -q '^          retention-days: 14$' .github/workflows/test.yml && grep -q 'if: always()' .github/workflows/test.yml && echo OK`(アップロードのステップが 1 つあり、保存期間の値が 14 で、成否によらず実行されること)、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
-- [ ] 8. 終了コードの契約の自己検査
-  - [ ] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 4 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えない
+- [x] 8. 終了コードの契約の自己検査
+  - [x] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 4 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えない
     _Requirements: 10.2, 10.3, 10.4, 10.5, 10.6_
     _Boundary: SelfCheck_
     _Depends: 4.4_
     - 対象ファイル: `scripts/selfcheck_run_tests.sh`(新規)
     - 仕様参照: spec.md §5.6
     - 検証コマンド(**bash で実行する**): `cp -R reports /tmp/rep.orig 2>/dev/null; ./scripts/selfcheck_run_tests.sh; rc=$?; test $rc -eq 0 && echo OK`(4 項目すべてが期待どおり)、`diff -rq reports /tmp/rep.orig >/dev/null 2>&1 && echo REPORTS_UNTOUCHED_OK; rm -rf /tmp/rep.orig`(10.5。リポジトリの `reports/` を書き換えないこと)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's|^  return "${status}"$|  return 0|' scripts/run_tests.sh; ./scripts/selfcheck_run_tests.sh >/dev/null 2>/tmp/e.txt; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 1 && echo DETECTS_REGRESSION_OK`(10.6。終了コードの透過を壊すと検査が失敗すること。`sed` のパターンは実装に合わせて調整する)
-  - [ ] 8.2 `Makefile` に `selfcheck` ターゲットを追加し、CI のステップとして常時実行する
+  - [x] 8.2 `Makefile` に `selfcheck` ターゲットを追加し、CI のステップとして常時実行する
     _Requirements: 10.1, 10.7_
     _Boundary: Makefile_
     _Depends: 8.1_
@@ -190,8 +190,8 @@
     - 仕様参照: spec.md §5.3、§5.5
     - 検証コマンド: `make selfcheck && echo OK`、`grep -q 'make selfcheck' .github/workflows/test.yml && echo OK`、push 後に `gh pr checks` がグリーンであること
 
-- [ ] 7. ドキュメント反映
-  - [ ] 7.1 `docs/testing.md` を新規作成し、テストスイートの配置・命名・アサーション・後始末・禁止事項を記す。gdUnit4 の版の値は書かない
+- [x] 7. ドキュメント反映
+  - [x] 7.1 `docs/testing.md` を新規作成し、テストスイートの配置・命名・アサーション・後始末・禁止事項を記す。gdUnit4 の版の値は書かない
     _Requirements: 1.1, 5.1_
     _Boundary: Docs_
     _Depends: 2.2, 5.1_

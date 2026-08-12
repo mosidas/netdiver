@@ -7,16 +7,19 @@ netdiver のテストは [gdUnit4](https://github.com/godot-gdunit-labs/gdUnit4)
 ```sh
 make test                          # tests/ 以下のすべてを実行する
 make test TESTS=res://tests/player # 対象を絞る
+make selfcheck                     # 実行スクリプトの終了コードの契約を検査する
 ```
 
 `make test` は次を順に行う。
 
 1. gdUnit4 が未取得なら `scripts/fetch_gdunit4.sh` が取得する(取得済みなら何もしない)
-2. `.godot/global_script_class_cache.cfg` が無ければ Godot のインポートで生成する
+2. Godot のインポートを実行してクラスキャッシュを生成し直す(**毎回**。新しく足した `class_name` を解決できるようにするため)
 3. `reports/` を消してから gdUnit4 を起動する
-4. レポートに実行されたテストが 1 件も無ければ失敗にする
+4. レポートに実行されたテストが 1 件も無ければ失敗にする(**スキップされたテストは「実行された」に数えない**)
 
-`addons/gdUnit4/` と `reports/` は生成物であり、リポジトリには含めない。取得する版は `scripts/fetch_gdunit4.sh` の変数 `GDUNIT4_VERSION` ただ 1 箇所で定義する。他のファイル・文書に版の値を書かない。版を上げるときはこの変数を書き換えて `make test` を実行すれば、取得スクリプトが差し替える。
+`addons/gdUnit4/` と `reports/` は生成物であり、リポジトリには含めない。取得する版は `scripts/fetch_gdunit4.sh` の変数 `GDUNIT4_VERSION` ただ 1 箇所で定義する。他のファイル・文書に版の値を書かない。版を上げるときはこの変数を書き換えて `make test` を実行すれば、取得スクリプトが差し替える(クラスキャッシュは毎回生成し直すので、`.godot/` を手で消す必要はない)。
+
+`make selfcheck` は、実行スクリプトが「失敗を失敗として返す」ことを確かめる。リポジトリの外に一時のプロジェクトを作り、必ず失敗するスイート・すべて成功するスイート・テストが 1 件も無いパス・すべてスキップされるスイートの 4 種に対して終了コードを検査する。リポジトリの `reports/` と `.godot/` は書き換えない。
 
 ### 必要なもの
 
@@ -70,7 +73,8 @@ func test_<検証する振る舞い>() -> void:
 
 - 型注釈付き GDScript で書く
 - アサーションは gdUnit4 の `assert_*` 系(`assert_int` / `assert_float` / `assert_str` / `assert_bool` / `assert_array` / `assert_dict` / `assert_object` / `assert_vector` / `assert_signal` 等)を使う。**独自のアサーション関数を定義しない**
-- `add_child(node)` したノードは `auto_free(node)` を対にする。gdUnit4 が解放漏れを orphan として報告し、統計行の `orphans` が 0 でなくなる
+- テストの中で生成したオブジェクトは `auto_free(obj)` に渡す。解放されないまま残ると gdUnit4 が orphan として報告し、統計行の `orphans` が 0 でなくなって終了コード 101 になる。`add_child(node)` したノードも同じく `auto_free(node)` を対にする(実測では、ツリーへ載せたノードの解放漏れは orphan として数えられず、ツリーへ載せずに解放もしなかった生成物が orphan になる。どちらの場合も `auto_free` に渡しておけば足りる)
+- **引数を取るテストケースを書かない**。gdUnit4 が認識しない引数名(`timeout` の打ち間違い等)を書くと、テストは失敗ではなく **skip** として扱われる。`make test` はスキップだけの回を失敗にするが、他に成功したテストがあると気づきにくい。統計行の `skipped` が 0 であることを確かめる
 
 サンプルは `tests/harness/logic_test.gd`(純粋ロジック)と `tests/harness/scene_test.gd`(シーンツリーと物理フレーム)にある。
 
@@ -92,4 +96,4 @@ func test_<検証する振る舞い>() -> void:
 
 ## CI
 
-`.github/workflows/test.yml` が pull request と `main` への push で `make test` を実行する。Godot は公式リリースの Linux ビルドを URL 固定でダウンロードする(サードパーティの action を使わない)。テストの成否にかかわらず `reports/` をアーティファクトとして 14 日保存する。
+`.github/workflows/test.yml` が pull request と `main` への push で `make test` と `make selfcheck` を実行する。Godot は公式リリースの Linux ビルドを URL 固定でダウンロードする(サードパーティの action を使わない)。テストの成否にかかわらず `reports/` をアーティファクトとして 14 日保存する。

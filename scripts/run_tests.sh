@@ -59,12 +59,10 @@ fetch_gdunit4() {
 }
 
 # 取得スクリプトより後に呼ぶ。gdUnit4 を展開する前に生成したクラスキャッシュには `GdUnitTestSuite` が
-# 登録されず、テストの探索がパースエラーになるため
+# 登録されず、テストの探索がパースエラーになるため。
+# キャッシュの有無で分岐しない。古いキャッシュが残っていると、新しく足した `class_name` を解決できず
+# `Parse Error: Identifier "..." not declared in the current scope` になる
 ensure_class_cache() {
-  if [[ -f "${CLASS_CACHE}" ]]; then
-    return 0
-  fi
-
   local import_status=0
   "${GODOT}" --headless --import --path "${REPO_ROOT}" || import_status=$?
 
@@ -80,8 +78,12 @@ run_gdunit4() {
   local test_path="$1"
 
   # 実行の前に消す。前回のレポートが残っていると、探索エラーで新しいレポートが出なかった回でも
-  # `results.xml` が見つかり、件数判定が古い結果を根拠に成功と誤判定するため
-  rm -rf "${REPORTS_DIR}"
+  # `results.xml` が見つかり、件数判定が古い結果を根拠に成功と誤判定するため。
+  # 削除の失敗を見逃さない。見逃すと、消せなかった古いレポートで同じ誤判定が起きる
+  if ! rm -rf "${REPORTS_DIR}" || [[ -e "${REPORTS_DIR}" ]]; then
+    printf 'failed to remove the previous reports: %s\n' "${REPORTS_DIR}" >&2
+    return 1
+  fi
 
   # タイムアウトで包む範囲を gdUnit4 の起動だけに限る。取得とインポートを含めると、124 が
   # 「テストが終わらない」以外(ネットワークの遅さ・初回インポートの所要時間)でも出て原因を切り分けられず、
@@ -133,12 +135,32 @@ verify_report_has_test_cases() {
   fi
 
   results="${report_dir}/results.xml"
-  # 一致が無いときの `grep` の終了コード 1 で打ち切らない。0 件であること自体が判定の材料であるため
-  count="$({ grep -o '<testcase[ />]' "${results}" || true; } | wc -l)"
+  count="$(executed_test_case_count "${results}")"
   if [[ "$((count))" -eq 0 ]]; then
-    printf 'gdUnit4 exited 0 but %s has 0 testcase elements: no test case was executed\n' "${results}" >&2
+    printf 'gdUnit4 exited 0 but %s has no executed test case (skipped ones are not counted)\n' "${results}" >&2
     return 1
   fi
+}
+
+# `testcase` 要素をそのまま数えない。gdUnit4 はテストケースの引数名を誤ったスイートを失敗ではなく
+# skip として扱い、スキップされたケースも `testcase` 要素として出力するため、要素数で数えると
+# 書き手の打ち間違いが成功として通過する
+executed_test_case_count() {
+  awk '
+    /<testcase/ {
+      if ($0 ~ /\/>/ || $0 ~ /<\/testcase>/) {
+        if ($0 !~ /<skipped/) { n++ }
+        in_case = 0
+        next
+      }
+      in_case = 1
+      skipped = 0
+      next
+    }
+    in_case && /<skipped/ { skipped = 1 }
+    in_case && /<\/testcase>/ { if (!skipped) { n++ }; in_case = 0 }
+    END { print n + 0 }
+  ' "$1"
 }
 
 main() {
