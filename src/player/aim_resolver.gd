@@ -5,8 +5,20 @@ extends RefCounted
 ##
 ## 入力・向き・接地の 3 つだけに依存し、ノードの状態を持たない。
 
+const INVALID_FACING_ERROR_FORMAT: String = (
+	"AimResolver.resolve(): facing は -1 または 1 でなければならない(現在値: %s)。Vector2i(1, 0) を返す"
+)
+
+const FALLBACK_DIRECTION: Vector2i = Vector2i(1, 0)
+
 
 static func resolve(move_x: float, aim_y: float, facing: int, is_on_floor: bool) -> Vector2i:
+	# ガードを関数の先頭に置く: 入力の有無で分けると、入力があるときだけ facing の
+	# 異常値が退避先を素通りし、戻り値が 8 方向の外へ出る
+	if facing != -1 and facing != 1:
+		push_error(INVALID_FACING_ERROR_FORMAT % facing)
+		return FALLBACK_DIRECTION
+
 	# signi() に float を渡さない: 切り捨てを経るため ±1 未満の入力が 0 に潰れ、
 	# 斜めの入力が水平・垂直へ寄る
 	var direction: Vector2i = Vector2i(int(signf(move_x)), int(signf(aim_y)))
