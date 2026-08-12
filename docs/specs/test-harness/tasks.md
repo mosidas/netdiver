@@ -51,14 +51,14 @@
     - 検証コマンド: `test -d addons/gdUnit4 && { git status --porcelain | grep -q 'addons/gdUnit4' && echo NG || echo OK; } || echo "SKIP: addons/gdUnit4 が無い状態では判定できない"`(取得済みであることを前提として明示する)、`grep -c gdUnit4 project.godot`(0 であること)、`git check-ignore -q addons/AsepriteWizard/plugin.cfg && echo NG || echo OK`
 
 - [ ] 2. サンプルのテストスイート
-  - [ ] 2.1 (P) `tests/harness/logic_test.gd` を新規作成し、純粋ロジックを検証するテストケースを置く
+  - [x] 2.1 (P) `tests/harness/logic_test.gd` を新規作成し、純粋ロジックを検証するテストケースを置く
     _Requirements: 5.2, 5.4_
     _Boundary: SampleTests_
     _Depends: 1.1_
     - 対象ファイル: `tests/harness/logic_test.gd`(新規)
     - 仕様参照: spec.md §5.4、§6.2
     - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | grep -q 'logic_test.gd' && echo OK`(ファイル名の接尾辞で発見されること)
-  - [ ] 2.2 (P) `tests/harness/scene_test.gd` を新規作成し、ノードをシーンツリーへ載せて物理フレームを進める統合テストを置く。`auto_free` で解放し orphan を出さない
+  - [x] 2.2 (P) `tests/harness/scene_test.gd` を新規作成し、ノードをシーンツリーへ載せて物理フレームを進める統合テストを置く。`auto_free` で解放し orphan を出さない
     _Requirements: 5.3_
     _Boundary: SampleTests_
     _Depends: 1.1_
@@ -195,3 +195,6 @@
 - **シバンは `#!/bin/bash`**(タスク 1.2)。`#!/usr/bin/env bash` にすると、PATH を空にした状態でスクリプト自体が起動できず(`env: bash: No such file or directory`、rc=127)、「不足しているコマンドを報告する」振る舞いを観測できない。副作用として macOS の既定 bash 3.2 で動くため、連想配列・`mapfile`・`${var^^}` 等の bash 4 以降の機能を使わない。`scripts/run_tests.sh` も同じ制約に合わせる。
 - 取得スクリプトは `curl`・`unzip` 以外の外部コマンドに依存しないよう、`plugin.cfg` の読み取りを bash 組み込みのパーサ `plugin_cfg_value()` で行い、`dirname` の代わりに `${BASH_SOURCE[0]%/*}` を使う(`dirname` が無いと `REPO_ROOT` がファイルシステムの根へ潰れる)。
 - 既存 `addons/gdUnit4/` の削除は、ダウンロードと版の照合が終わった後・`mv` の直前に行う。先に消すと、版を上げた直後にネットワークが不通のとき旧版を失ったうえで取得にも失敗する。`mv` が失敗した場合は部分的な配置をその場で削除する。
+- **`move_and_slide()` は物理フレームの中で呼ぶ**(タスク 2.2 で判明)。テスト本体のループから呼ぶと、Godot が `get_process_delta_time()`(描画フレームの delta)を使うため変位が定まらない(100 px/s・3 回の呼び出しで 5.0 px にならず、実測で 2.37 px・10.58 px と回ごとに異なった)。ノードに `_physics_process` から指定回数だけ `move_and_slide()` を呼ばせ、テスト側は `await await_millis()` で完了を待って、消化したフレーム数をアサーションで確かめる。spec.md §5.4 の「物理フレームの進行: `await await_millis()` で待つ」だけでは移動の検証に足りない。`docs/testing.md`(タスク 7.1)にこの補足を書く。
+- `gdUnit4` を取得する前に生成した `.godot/global_script_class_cache.cfg` には `GdUnitTestSuite` 等が登録されていない。取得の後に `godot --headless --import --path .` を実行し直さないと、テストの探索がパースエラーになる。`scripts/run_tests.sh`(タスク 3.3)はキャッシュの有無だけを見るため、この順序の問題を踏まないよう取得の後にインポートする。
+- **tasks.md タスク 2.2 の検証コマンドの不備**: `... | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt` は、`grep -q` が最初の一致で終了して `tee` が SIGPIPE で死ぬため `/tmp/o.txt` が途中で切れ、2 本目の判定が偽陰性になる。判定には出力をファイルへリダイレクトしてから grep する形(`... > /tmp/o.txt 2>&1; grep -q ... /tmp/o.txt`)を使った。同じ形の検証コマンドが他タスクにもあるため、パイプで `grep -q` に渡す判定は同じ置き換えを行う。
