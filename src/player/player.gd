@@ -19,6 +19,14 @@ var input_source: Callable = PlayerInput.read
 func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
 	velocity.x = cmd.move_x * stats.move_speed
 
+	# 引数の is_on_floor を使い、同名のメソッド is_on_floor() を呼ばない: ツリーに載せていない
+	# ノードではメソッドが常に偽を返し、地上の振る舞いを検証できない
+	if is_on_floor:
+		# 接地中に垂直の速度を 0 へ戻す: 重力が蓄積したままだと、離陸直後の落下が速くなる
+		velocity.y = -stats.jump_speed if cmd.jump_pressed else 0.0
+	else:
+		velocity.y += stats.gravity * delta
+
 	if not is_zero_approx(cmd.move_x):
 		# signi() に float を渡さない: 切り捨てを経るため ±1 以外の move_x で 0 になり、
 		# facing が -1 または 1 という不変条件が壊れる

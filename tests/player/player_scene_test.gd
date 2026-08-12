@@ -79,7 +79,10 @@ func test_injected_input_source_moves_the_player_over_physics_frames() -> void:
 	var expected_x: float = player.stats.move_speed / float(Engine.physics_ticks_per_second) * MOVE_FRAMES
 	# 待ちが足りずフレームを消化しなかった場合と、移動しなかった場合を区別する
 	assert_int(int(stub.get("call_count"))).is_greater_equal(MOVE_FRAMES)
-	assert_vector(player.position).is_equal_approx(Vector2(expected_x, 0.0), Vector2(0.001, 0.001))
+	assert_float(player.position.x).is_equal_approx(expected_x, 0.001)
+	# 垂直の位置は値で確かめない: 足場の無い空中では重力で落ち続け、落下量は待ち時間の中で
+	# 消化した物理フレーム数に依存する。落下が起きていることだけを確かめる
+	assert_float(player.position.y).is_greater(0.0)
 
 
 func test_input_source_can_be_replaced() -> void:
