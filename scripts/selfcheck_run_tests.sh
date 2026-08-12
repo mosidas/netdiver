@@ -20,10 +20,11 @@ trap cleanup EXIT
 failures=0
 
 # 検査はリポジトリの外に作った一時プロジェクトで行う。リポジトリの reports/ と .godot/ を
-# 書き換えると、並行して走る本来のテスト実行と互いの判定材料を壊し合うため
+# 書き換えると、並行して走る本来のテスト実行と互いの判定材料を壊し合うため。
+# WORK_DIR の作成をこの関数の中で行わない。呼び出し側がコマンド置換で受けるとサブシェルになり、
+# 代入が親へ伝わらず trap の後始末が空振りするため
 setup_project() {
-  WORK_DIR="$(mktemp -d)"
-  local project="${WORK_DIR}/project"
+  local project="$1"
 
   mkdir -p "${project}/addons" "${project}/scripts" "${project}/tests"
 
@@ -65,8 +66,6 @@ extends GdUnitTestSuite
 func test_would_fail_if_executed(timout = 5000) -> void:
 	assert_int(1).is_equal(2)
 SKIPPED
-
-  printf '%s' "${project}"
 }
 
 expect_exit_code() {
@@ -88,8 +87,9 @@ expect_exit_code() {
 }
 
 main() {
-  local project
-  project="$(setup_project)"
+  WORK_DIR="$(mktemp -d)"
+  local project="${WORK_DIR}/project"
+  setup_project "${project}"
 
   expect_exit_code 'failing suite' 100 "${project}" 'res://tests/failing'
   expect_exit_code 'passing suite' 0 "${project}" 'res://tests/passing'
