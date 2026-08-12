@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "test-harness",
-  "state": "spec-generated",
+  "state": "spec-approved",
   "approvals": {
     "spec": true,
     "tasks": true
