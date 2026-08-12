@@ -137,10 +137,11 @@
     _Requirements: 1.1, 2.1, 2.2, 2.3, 2.4, 2.6_
     _Boundary: Makefile_
     _Depends: 4.4_
+    _Blocked: 要件 2.3(実行スクリプトの終了コードをそのまま make test の終了コードとする)が GNU make の仕様上満たせない。make はレシピが失敗するとコマンドの終了コードにかかわらず 2 を返す(GNU Make 3.81 で実測。rc=100 を返すレシピでも make の終了コードは 2)。要件 6.5(CI が make test の 0 以外で失敗する)は満たすが、値の透過は満たさない_
     - 対象ファイル: `Makefile`(変更)
     - 仕様参照: spec.md §5.3、§6.1「不変条件」
     - 検証コマンド: `make test && echo OK`(2.1・2.3 の成功経路)、`make test TESTS=res://tests/harness | grep -q 'res://tests/harness' && echo OK`(2.2。`TESTS` を無視する `Makefile` は 3.4 が出力する解決済みのパスが一致しないため通らない)、`make -n test | grep -qi aseprite && echo NG || echo OK`(2.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" Makefile`(1.1。0 であること)、`make test TESTS=res://tests/does_not_exist; test $? -eq 1 && echo OK`(2.3 の失敗経路。実行スクリプトの終了コードが `make` に伝わること)
-  - [ ] 5.2 クラスキャッシュと gdUnit4 が取得済みの状態で `make test` が 30 秒以内に終わることを計測する
+  - [x] 5.2 クラスキャッシュと gdUnit4 が取得済みの状態で `make test` が 30 秒以内に終わることを計測する
     _Requirements: 8.3_
     _Boundary: Makefile_
     _Depends: 5.1_
@@ -174,7 +175,7 @@
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
 - [ ] 7. ドキュメント反映
-  - [ ] 7.1 `docs/testing.md` を新規作成し、テストスイートの配置・命名・アサーション・後始末・禁止事項を記す。gdUnit4 の版の値は書かない
+  - [x] 7.1 `docs/testing.md` を新規作成し、テストスイートの配置・命名・アサーション・後始末・禁止事項を記す。gdUnit4 の版の値は書かない
     _Requirements: 1.1, 5.1_
     _Boundary: Docs_
     _Depends: 2.2, 5.1_
