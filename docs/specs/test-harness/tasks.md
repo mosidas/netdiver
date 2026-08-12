@@ -137,10 +137,9 @@
     _Requirements: 1.1, 2.1, 2.2, 2.3, 2.4, 2.6_
     _Boundary: Makefile_
     _Depends: 4.4_
-    _Blocked: 要件 2.3(実行スクリプトの終了コードをそのまま make test の終了コードとする)が GNU make の仕様上満たせない。make はレシピが失敗するとコマンドの終了コードにかかわらず 2 を返す(GNU Make 3.81 で実測。rc=100 を返すレシピでも make の終了コードは 2)。要件 6.5(CI が make test の 0 以外で失敗する)は満たすが、値の透過は満たさない_
     - 対象ファイル: `Makefile`(変更)
     - 仕様参照: spec.md §5.3、§6.1「不変条件」
-    - 検証コマンド: `make test && echo OK`(2.1・2.3 の成功経路)、`make test TESTS=res://tests/harness | grep -q 'res://tests/harness' && echo OK`(2.2。`TESTS` を無視する `Makefile` は 3.4 が出力する解決済みのパスが一致しないため通らない)、`make -n test | grep -qi aseprite && echo NG || echo OK`(2.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" Makefile`(1.1。0 であること)、`make test TESTS=res://tests/does_not_exist; test $? -eq 1 && echo OK`(2.3 の失敗経路。実行スクリプトの終了コードが `make` に伝わること)
+    - 検証コマンド: `make test && echo OK`(2.1 と 2.3 の成功経路)、`make test TESTS=res://tests/harness | grep -q 'res://tests/harness' && echo OK`(2.2。`TESTS` を無視する `Makefile` は 3.4 が出力する解決済みのパスが一致しないため通らない)、`make -n test | grep -qi aseprite && echo NG || echo OK`(2.4)、`V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" Makefile`(1.1。0 であること)、`make test TESTS=res://tests/does_not_exist; test $? -ne 0 && echo OK`(2.3 の失敗経路。GNU make はレシピの失敗を終了コード 2 へ丸めるため、値ではなく 0 以外であることを判定する)
   - [x] 5.2 クラスキャッシュと gdUnit4 が取得済みの状態で `make test` が 30 秒以内に終わることを計測する
     _Requirements: 8.3_
     _Boundary: Makefile_
@@ -156,9 +155,8 @@
     _Depends: 5.1_
     - 対象ファイル: `.github/workflows/test.yml`(新規)
     - 仕様参照: spec.md §5.5
-    - 検証コマンド(`python3` を使う 2 本は PyYAML の導入を前提とする。未導入の場合は `import` が失敗して明示的に落ちるため、実装の欠陥と取り違えることはない):
-      - 構文: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); print(d)"`
-      - 6.1・6.2(起動条件): `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); t=d[True] if True in d else d['on']; assert 'pull_request' in t and 'main' in t['push']['branches']; print('OK')"`
+    - 検証コマンド(**YAML パーサを使わない**。本開発環境には PyYAML も ruby の psych も無く、端末に依存を増やさない方針のため。YAML の構文は GitHub 側の実行で検証される):
+      - 6.1・6.2(起動条件): `awk '/^on:/{f=1;next} /^[a-z]/{f=0} f' .github/workflows/test.yml > /tmp/on.txt; grep -q '^  pull_request:$' /tmp/on.txt && grep -q '^      - main$' /tmp/on.txt && echo OK`(`on:` ブロックの中だけを取り出して照合する)
       - 6.3(URL 固定): `grep -q 'https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip' .github/workflows/test.yml && echo OK`(URL の正本は spec.md §5.5)
       - 6.4(サードパーティ action の不使用): `grep -qiE '^[[:space:]]*(- )?uses:.*godot' .github/workflows/test.yml && echo NG || echo OK`
       - 1.1(版の値を書かない): `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
@@ -170,8 +168,8 @@
     _Depends: 6.1_
     - 対象ファイル: `.github/workflows/test.yml`(変更)
     - 仕様参照: spec.md §5.5「成果物」、§7 Requirement 7
-    - 検証コマンド(`python3` を使う 1 本は PyYAML の導入を前提とする。未導入の場合は `import` が失敗して明示的に落ちる):
-      - 7.2・7.3: `python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/test.yml')); s=[x for j in d['jobs'].values() for x in j['steps'] if 'upload-artifact' in str(x.get('uses',''))]; assert len(s)==1, s; assert s[0]['with']['retention-days']==14, s[0]['with']; print('OK')"`(アップロードのステップが 1 つあり、保存期間の値が 14 であること)、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
+    - 検証コマンド(**YAML パーサを使わない**。理由はタスク 6.1 と同じ):
+      - 7.2・7.3: `test "$(grep -c 'uses: actions/upload-artifact' .github/workflows/test.yml)" -eq 1 && grep -q '^          retention-days: 14$' .github/workflows/test.yml && grep -q 'if: always()' .github/workflows/test.yml && echo OK`(アップロードのステップが 1 つあり、保存期間の値が 14 で、成否によらず実行されること)、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
 - [ ] 7. ドキュメント反映
