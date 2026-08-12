@@ -17,6 +17,10 @@ RUNTEST_SCRIPT="${REPO_ROOT}/addons/gdUnit4/runtest.sh"
 REPORTS_DIR="${REPO_ROOT}/reports"
 REPORTS_RES_PATH="res://reports"
 
+# gdUnit4 が引数名の誤りを理由にスキップしたときだけ出す文言。
+# 意図的なスキップ(skip_reason の指定)と区別するために、理由の文言で見分ける
+UNKNOWN_ARGUMENT_MARKER="Unknown test case argument"
+
 GODOT=""
 
 resolve_godot() {
@@ -138,6 +142,13 @@ verify_report_has_test_cases() {
   count="$(executed_test_case_count "${results}")"
   if [[ "$((count))" -eq 0 ]]; then
     printf 'gdUnit4 exited 0 but %s has no executed test case (skipped ones are not counted)\n' "${results}" >&2
+    return 1
+  fi
+
+  # 件数だけで判定しない。成功するテストが 1 件でもあれば件数は 1 以上になり、
+  # 打ち間違いで実行されなかったケースが無視される
+  if grep -q "${UNKNOWN_ARGUMENT_MARKER}" "${results}"; then
+    printf 'a test case was skipped because of an unknown argument name: see %s\n' "${results}" >&2
     return 1
   fi
 }

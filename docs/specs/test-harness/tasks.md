@@ -116,7 +116,7 @@
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 のエラー表、§7 Requirement 4
     - 検証コマンド(2 本): `./scripts/run_tests.sh; test $? -eq 0 && echo OK`(全成功)、`printf 'extends GdUnitTestSuite\n\nfunc test_fail() -> void:\n\tassert_int(1).is_equal(2)\n' > tests/harness/tmp_fail_test.gd; ./scripts/run_tests.sh; test $? -eq 100 && echo OK; rm tests/harness/tmp_fail_test.gd`(失敗の透過)
-  - [ ] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す。件数が 1 以上でも、`Unknown test case argument` を理由とするスキップが 1 件以上あれば同じく終了コード 1 を返す
+  - [x] 4.3 gdUnit4 が 0 を返した場合に限り、連番が最大の `results.xml` の**スキップされていない** `testcase` の件数を数え、`results.xml` が無いか 0 件なら標準エラーへ出力して終了コード 1 を返す。件数が 1 以上でも、`Unknown test case argument` を理由とするスキップが 1 件以上あれば同じく終了コード 1 を返す
     _Requirements: 4.2, 4.6, 4.7, 4.8_
     _Boundary: RunScript_
     _Depends: 4.2_
@@ -176,7 +176,7 @@
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
 - [x] 8. 終了コードの契約の自己検査
-  - [ ] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 7 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えず、終了時に一時ディレクトリを削除する
+  - [x] 8.1 `scripts/selfcheck_run_tests.sh` を新規作成する。リポジトリの外に一時のプロジェクトを作り(gdUnit4 は取得済みのものへシンボリックリンクで共有)、固定のテストスイート 7 種に対して `scripts/run_tests.sh` の終了コードを検査する。リポジトリの `reports/` と `.godot/` を書き換えず、終了時に一時ディレクトリを削除する
     _Requirements: 10.2, 10.3, 10.4, 10.5, 10.6, 10.8, 10.9_
     _Boundary: SelfCheck_
     _Depends: 4.4_
@@ -218,6 +218,7 @@
 - **タイムアウトで包む範囲**(タスク 4.4): gdUnit4 の起動だけを包み、取得とインポートは含めない。124 が「テストが終わらない」以外(ネットワークの遅さ・初回インポートの所要時間)でも出ると原因を切り分けられず、要件 8.3 の計測が取得済み・キャッシュ済みの状態を前提にしていることとも合わないため。spec.md §5.2 副作用 7 の「全体を 120 秒のタイムアウトで包む」はスクリプト全体とも読めるため、文言の擦り合わせが要る(実装後の報告事項)。
 - **`--godot_binary` には絶対パスを渡す**(タスク 4.1)。`addons/gdUnit4/runtest.sh` は `[ ! -f "$godot_binary" ]` で実行ファイルの存在を確かめるため、`godot` のままでは `does not exist` で止まる。`GODOT_BIN` 経由でも同じ検査を通る。
 - **正常なスイートとパースエラーのスイートが混在する経路**は 3 回とも終了コード 134 でレポートが出力される(spec.md §3・§8 の記述どおり)。件数判定では検出できず、0 以外の透過で失敗になる。パースエラーのみの経路は 1・1・105 と割れた(0 は出ない)。
+- **自己検査が捕捉できない退行の類型**(実測): 件数判定が「スキップされたケースを数える」形へ退行しても、自己検査は捕捉しない。全件スキップの検査項目が引数名の打ち間違いによるスイートを使っており、要件 4.8(`Unknown test case argument` の検出)が先に働いて 1 が返るためである。意図的なスキップ(`do_skip` / `skip_reason` の指定)だけのスイートを検査項目に足せば区別できる。現状の振る舞い自体は正しい(全件スキップで 1 を返すことを実測)ので、検査の網羅の課題として記録する。
 - **CI の失敗検証の結果**(タスク 6.1・6.2): 3 件とも意図した経路で失敗した。6.5 は `Run tests` が失敗しジョブが失敗(`Upload reports` は成功)。6.6 は `Install Godot` が `curl: (22) ... 404` で失敗し `Run tests` はスキップ。7.4 は `reports/` が生成されない回でも `Upload reports` が成功しジョブを失敗させなかった。いずれも確認後にワークフローとテストを元へ戻し、CI がグリーンに戻ることを確認した。
 - **GNU make はレシピの失敗を終了コード 2 へ丸める**(タスク 5.1)。`make test` は成否だけを表す。原因を終了コードで切り分けるときは `scripts/run_tests.sh` を直接呼ぶ。この制約により spec の要件 2.3 を改訂した。
 - **tasks.md タスク 2.2 の検証コマンドの不備**: `... | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt` は、`grep -q` が最初の一致で終了して `tee` が SIGPIPE で死ぬため `/tmp/o.txt` が途中で切れ、2 本目の判定が偽陰性になる。判定には出力をファイルへリダイレクトしてから grep する形(`... > /tmp/o.txt 2>&1; grep -q ... /tmp/o.txt`)を使った。同じ形の検証コマンドが他タスクにもあるため、パイプで `grep -q` に渡す判定は同じ置き換えを行う。
