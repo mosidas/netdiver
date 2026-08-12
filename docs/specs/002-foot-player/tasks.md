@@ -65,7 +65,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 対象ファイル: `src/player/player_stats.gd`(新規), `src/player/player_command.gd`(新規), `tests/player/player_stats_test.gd`(新規)
     - 仕様参照: spec.md §6.1、§6.3
     - 検証コマンド: `make test TESTS=res://tests/player`
-  - [ ] 1.2 (P) `project.godot` に 7 つの入力アクションと 2d_physics のレイヤ名を追加する。`PlayerInput.read()` を実装する(この関数自体はテストしない)
+  - [x] 1.2 (P) `project.godot` に 7 つの入力アクションと 2d_physics のレイヤ名を追加する。`PlayerInput.read()` を実装する(この関数自体はテストしない)
     _Requirements: 8.1_
     _Boundary: ProjectConfig_
     _Depends: 1.1_
@@ -297,5 +297,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`@export` の有無はテストから検証できる**(タスク 1.1)。`get_property_list()` の `usage` に `PROPERTY_USAGE_EDITOR` ビットが立つ。実測で `@export var` は usage=4102、素の `var` は usage=4096 であり、`@export` を外すとテストが落ちる。
 - **新規スクリプトを足すと Godot が `.gd.uid` を生成する**(タスク 1.1)。`.gitignore` の対象外で追跡されるため、スクリプトと `.uid` を対にしてステージする。
 - **テストスイートは `GdUnitTestSuite`(`Node` 派生)**(タスク 1.1)。ループ変数に `name` を使うと組み込みプロパティを隠すため、別名にする。
+- **`class_name` を足した直後は `.godot/global_script_class_cache.cfg` が古い**(タスク 1.2)。`godot --headless --path . --import` を先に走らせないと `--script` 実行で「Identifier not declared」になる。`make test` は毎回インポートするためこの問題を踏まない。
+- **衝突レイヤ名を `project.godot` に定義済み**(タスク 1.2): `2d_physics/layer_1..5` = `terrain` / `player` / `player_projectile` / `enemy` / `enemy_projectile`。
+- **入力は `physical_keycode` で登録した**(タスク 1.2)。キーボードレイアウトに依存させないため。`InputEventKey.new()` の既定 `device` は 16 なので、エディタ生成物に合わせて -1 を明示する必要がある。
+- **`Input.is_action_just_pressed()` は物理フレームと描画フレームで別々に判定される**(タスク 1.2)。`PlayerInput.read()` は `_physics_process` からのみ呼ぶこと。`_process` からも呼ぶと `jump_pressed` の取りこぼしが起きる。
 </content>
 </invoke>
