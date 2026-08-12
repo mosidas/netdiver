@@ -119,7 +119,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 検証コマンド: `make test TESTS=res://tests/player`
 
 - [ ] 3. (P) 射撃方向の決定
-  - [ ] 3.1 `AimResolver.resolve()` を純粋関数として実装し、8 方向・入力なし・地上での下方向の落としを検証する
+  - [x] 3.1 `AimResolver.resolve()` を純粋関数として実装し、8 方向・入力なし・地上での下方向の落としを検証する
     _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
     _Boundary: AimResolver_
     - 対象ファイル: `src/player/aim_resolver.gd`(新規), `tests/player/aim_resolver_test.gd`(新規)
@@ -311,6 +311,10 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`await assert_error(...).is_push_error(...)` は文言の完全一致で照合する**(タスク 2.3。`GdUnitGodotErrorAssertImpl._has_log_entry` が `GdObjects.equals` を使う)。`%s` の float は `0.0` / `-250.0`、int は `0` と描画される。**`await` を必ず付けること。** `assert_error(...).is_success()` は「callable の実行中に一切のエラーが無い」ことを見る。`add_child()` は同期で `_ready()` まで走り物理フレームは進まないため、足場の無い `Player` でも安定する。
 - **`Player._ready()` が 2 つの検査を持つ**(タスク 2.3): `stats` 未設定 → `push_error` + `PlayerStats.new()` へフォールバック、`stats` の数値項目に 0 以下 → 項目名と現在値を添えて `push_error`。検査対象は `get_property_list()` を `PROPERTY_USAGE_SCRIPT_VARIABLE & PROPERTY_USAGE_EDITOR` と `TYPE_FLOAT / TYPE_INT` で絞って導出している。**`PlayerStats` に「0 を許す数値項目」や `@export_storage` の項目を足すとこの検査が誤検出・見落としをする。**
 - **`apply_command()` の先頭に `delta <= 0.0` のガードがある**(タスク 2.3)。後続タスクが処理を足すときは、ガードより後ろに置くこと。
+- **分岐の条件に複合述語があるときは、フラグごとに到達可能な出力の表を厳密比較で回す**(タスク 3.1 のレビューで [Critical] 1 件。自己修復 1 回で解消)。`if is_on_floor and direction.y > 0:` の片側(下向き)だけを厳密比較しても、条件を `if is_on_floor:` へ広げる変異が素通りした(接地時の上撃ち・斜め上撃ちが未検証だった)。総当たりループが弱いアサーション(非 ZERO・範囲内)しか持たないと穴を塞げない。**後続の `PrimaryWeapon`・`SecondaryWeapon`・`Health` の状態分岐でも同じ穴が出やすい。**
+- **事後条件は集合への所属で表せる**(タスク 3.1)。`assert_array(EIGHT_DIRECTIONS).contains([direction])` は「非 ZERO・範囲内」より厳密に強い。`contains` は期待値を配列で受け、`Array[Vector2i]` の const と併用できる。
+- **gdUnit4 の統計の `failures` は失敗ケース数ではなく失敗アサーション数**(タスク 3.1)。ループ内で複数落ちると 1 ケースでも複数に数えられる。
+- **`assert_vector()` は `Vector2i` に対応する**(タスク 3.1)。`append_failure_message()` は `GdUnitVectorAssert` / `GdUnitArrayAssert` / `GdUnitIntAssert` のいずれも自身の型を返すため、型注釈付きのチェーンが書ける。ループ内のアサーションに入力の組を添えると失敗時に特定できる。
 - **`Player` のツリー上のテストは足場を持たないため毎回落下する**(タスク 2.2)。垂直方向の値を固定したい後続テストは、仮の足場(`StaticBody2D`・layer 1)を置くか、消化フレーム数から算出すること。
 - **`is_on_floor` は `apply_command()` の引数であり、基底 `CharacterBody2D.is_on_floor()` をシャドウする**(タスク 2.2)。メソッド側を呼ぶとツリー外のテストで常に非接地になる。メソッドの呼び出しは `_physics_process` の 1 箇所だけに保つこと。
 - **テストは既定値のままの `stats` に頼らない**(タスク 1.3 のレビュー指摘)。`move_speed` を既定の 100.0 のままで検証すると、実装が `stats` を読まず 100.0 を直書きしても緑になる。`PlayerStats.new()` に既定と異なる値(例: 250.0)を入れて `player.stats` へ差し替えてから検証すると、要件 10.2(値の出どころの一本化)の退行も捕捉できる。後続の `Player` 系タスク(2.1〜2.3・5.3・6.3)はこの形を採ること。
