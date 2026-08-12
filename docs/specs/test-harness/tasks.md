@@ -67,7 +67,7 @@
     - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt && echo OK`(統計行の `0 orphans` は gdUnit4 v6.2.0 の出力で確認済みの表記。書式が変わっていた場合は統計行の orphans の値が 0 であることを読み替えて判定する)
 
 - [ ] 3. 実行スクリプトの前提整備
-  - [ ] 3.1 `scripts/run_tests.sh` を新規作成し、Godot の解決と `timeout` の解決を**それぞれ独立した異常系**として実装する。どちらか一方が欠けても標準エラーへ出力して終了コード 1 で終わる。`timeout` の不在時は入手方法(Homebrew の `coreutils`)も出す
+  - [x] 3.1 `scripts/run_tests.sh` を新規作成し、Godot の解決と `timeout` の解決を**それぞれ独立した異常系**として実装する。どちらか一方が欠けても標準エラーへ出力して終了コード 1 で終わる。`timeout` の不在時は入手方法(Homebrew の `coreutils`)も出す
     _Requirements: 3.4, 3.6_
     _Boundary: RunScript_
     _Depends: 1.1_
@@ -76,14 +76,14 @@
     - 検証コマンド(2 本。**bash で実行する**。異常系ごとに 1 本ずつ):
       - 3.4(Godot だけが無い): `D=$(mktemp -d); ln -s "$(command -v timeout)" "$D/timeout"; env -u GODOT_BIN PATH="$D:/usr/bin:/bin" ./scripts/run_tests.sh; test $? -eq 1 && echo OK`
       - 3.6(`timeout` だけが無い): `D=$(mktemp -d); ln -s "$(command -v godot)" "$D/godot"; PATH="$D:/usr/bin:/bin" ./scripts/run_tests.sh 2>/tmp/e.txt; rc=$?; grep -q coreutils /tmp/e.txt && test $rc -eq 1 && echo OK`
-  - [ ] 3.2 実行スクリプトが取得スクリプトを毎回呼ぶようにする
+  - [x] 3.2 実行スクリプトが取得スクリプトを毎回呼ぶようにする
     _Requirements: 2.5_
     _Boundary: RunScript_
     _Depends: 3.1_
     - 対象ファイル: `scripts/run_tests.sh`(変更)
     - 仕様参照: spec.md §5.2 副作用 1
     - 検証コマンド(2 本): `rm -rf addons/gdUnit4 && ./scripts/run_tests.sh; test -f addons/gdUnit4/plugin.cfg && echo OK`(未取得の状態から取得されること)、`./scripts/run_tests.sh | grep -q 'skipped' && echo OK`(取得済みの状態でも取得スクリプトが呼ばれ、1.1 が定めた `skipped` の出力が現れること。条件付きで呼ぶ実装はこの 2 本目を通らない)
-  - [ ] 3.3 クラスキャッシュが無ければ `--headless --import` で生成する。生成に失敗したらテストを実行せず終了コード 1 で終わる
+  - [x] 3.3 クラスキャッシュが無ければ `--headless --import` で生成する。生成に失敗したらテストを実行せず終了コード 1 で終わる
     _Requirements: 3.1, 3.5_
     _Boundary: RunScript_
     _Depends: 3.1_
@@ -92,7 +92,7 @@
     - 検証コマンド(2 本):
       - 3.1: `rm -rf .godot && ./scripts/run_tests.sh; test -f .godot/global_script_class_cache.cfg && echo OK`
       - 3.5: `rm -rf .godot && D=$(mktemp -d); printf '#!/bin/sh\nexit 1\n' > "$D/godot"; chmod +x "$D/godot"; GODOT_BIN="$D/godot" ./scripts/run_tests.sh; test $? -eq 1 && echo OK`(インポートを失敗させ、テストを実行せず 1 で終わること。`reports/` が作られていないことも `test ! -d reports` で確認する)
-  - [ ] 3.4 実行スクリプトが第 1 引数でテストのパスを受け取り、省略時は `res://tests` を使うようにする。**解決したパスを標準出力へ 1 行出す**(この時点では gdUnit4 の起動が未実装のため、判定の材料をこの出力に置く)
+  - [x] 3.4 実行スクリプトが第 1 引数でテストのパスを受け取り、省略時は `res://tests` を使うようにする。**解決したパスを標準出力へ 1 行出す**(この時点では gdUnit4 の起動が未実装のため、判定の材料をこの出力に置く)
     _Requirements: 2.2_
     _Boundary: RunScript_
     _Depends: 3.1_
