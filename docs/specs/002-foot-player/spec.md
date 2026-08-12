@@ -20,7 +20,7 @@ netdiver の徒歩パートで、プレイヤーが操作する自機を作る�
 - 入力アクションの定義と読み取り
 - 動作確認用の仮ステージ(床・段差・壁・ダメージ領域)
 - 上記の振る舞いを検証するテスト
-- `docs/testing.md` の更新。`tests/harness/` が配置の規約の例外であることと、サンプルの位置づけを明記する(`docs/specs/test-harness/spec.md` §2 が本単位へ持ち越した判断)
+- `docs/testing.md` の更新。`tests/harness/` が配置の規約の例外であることと、サンプルの位置づけを明記する(`docs/specs/001-test-harness/spec.md` §2 が本単位へ持ち越した判断)
 
 ### 対象外(やらないこと)
 
@@ -38,7 +38,7 @@ netdiver の徒歩パートで、プレイヤーが操作する自機を作る�
 - **敵弾の弾速の上限 150 px/s で「移動で回避できる」が成立する** — 検証方法: `foot-enemies`(unit #3)で実際の敵弾を置いて回避できるかを確かめる / 状態: 未検証。算出の根拠は §6.2 に示す
 - **`ColorRect` の placeholder と `CollisionShape2D` の矩形の位置がずれない** — 検証方法: 仮ステージで表示と当たり判定の境界を目視で確かめる / 状態: 未検証
 - **`Callable` を差し替える形の入力の注入が、Godot 4.7.1 の headless で機能する** — 検証方法: テストから `input_source` を差し替えて `_physics_process` を経た移動を検証する / 状態: 未検証
-- **`move_and_slide()` を物理フレームの中で呼ぶ必要がある** — 検証方法: unit #1 で実測済み(テスト本体から呼ぶと描画フレームの delta が使われ、100 px/s・3 回で期待 5.0px に対し 2.37px・10.58px と割れた) / 状態: **検証済み**。記録は `docs/testing.md` の「物理フレームを進めるテスト」と `docs/specs/test-harness/tasks.md` の `## Implementation Notes` にある
+- **`move_and_slide()` を物理フレームの中で呼ぶ必要がある** — 検証方法: unit #1 で実測済み(テスト本体から呼ぶと描画フレームの delta が使われ、100 px/s・3 回で期待 5.0px に対し 2.37px・10.58px と割れた) / 状態: **検証済み**。記録は `docs/testing.md` の「物理フレームを進めるテスト」と `docs/specs/001-test-harness/tasks.md` の `## Implementation Notes` にある
 
 ## 4. 用語定義
 
@@ -440,7 +440,7 @@ tests/weapon/   ...
 
 **対象**: §6.6 ファイルの配置(「本単位が更新する文書」)
 
-`docs/specs/test-harness/spec.md` §2 が本単位へ持ち越した 2 件の判断に対応する。
+`docs/specs/001-test-harness/spec.md` §2 が本単位へ持ち越した 2 件の判断に対応する。
 
 **受け入れ基準**:
 
@@ -464,4 +464,4 @@ tests/weapon/   ...
 - 企画書 5.(プレイヤー)・6.(武器)・12.(技術方針): workspace リポジトリの `4_artifacts/netdiver/issues/01_game-design-doc/game-design-doc.md`
 - 本単位の位置づけと完了条件: `docs/specs/roadmap.md`
 - テストの書き方と headless の制約: `docs/testing.md`
-- `move_and_slide()` と物理フレームの実測: `docs/testing.md` の「物理フレームを進めるテスト」と `docs/specs/test-harness/tasks.md` の `## Implementation Notes`
+- `move_and_slide()` と物理フレームの実測: `docs/testing.md` の「物理フレームを進めるテスト」と `docs/specs/001-test-harness/tasks.md` の `## Implementation Notes`
