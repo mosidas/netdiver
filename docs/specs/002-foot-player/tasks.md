@@ -59,7 +59,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   spec.md §3 の未検証の前提のうち「`Callable` を差し替える形の入力の注入が Godot 4.7.1 の headless で機能する」を最初に確かめる。この前提が崩れると要件 8 と、要件 1.9 を含む検証方法の大半が組み替えになるため、他のどのタスクよりも前に置く。分解時に一時プロジェクトで予備検証を済ませており(`godot --headless --script` で、static メソッドを `Callable` の既定値にできること・差し替えた `Callable` が `_physics_process` 経由で速度に反映されることを確認した)、本タスクはそれを **gdUnit4 のテストツリー上で**再現することが目的である。予備検証は差し替え先に lambda を使ったが、テストでは lambda を使わない(1.3 の実装の要点を参照。差し替え自体は lambda でも成立するが、キャプチャが値コピーのため呼び出し回数を観測できない)。
 
-  - [ ] 1.1 `PlayerStats`(`Resource`)と `PlayerCommand` を新規作成し、既定値と不変条件をテストで固定する
+  - [x] 1.1 `PlayerStats`(`Resource`)と `PlayerCommand` を新規作成し、既定値と不変条件をテストで固定する
     _Requirements: 10.1_
     _Boundary: PlayerStats_
     - 対象ファイル: `src/player/player_stats.gd`(新規), `src/player/player_command.gd`(新規), `tests/player/player_stats_test.gd`(新規)
@@ -293,6 +293,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 (このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付き・レビューを通過した境界外変更の申告を追記する領域)
 
-- 知識 port: `docs/dev/ports` が存在しないため、注入なしで進める。
+- 知識 port: `docs/dev/ports` が存在しないため、注入なしで進める(`ports.py --skill dev-implement` が「port ルートが存在しない」を返す)。
+- **`@export` の有無はテストから検証できる**(タスク 1.1)。`get_property_list()` の `usage` に `PROPERTY_USAGE_EDITOR` ビットが立つ。実測で `@export var` は usage=4102、素の `var` は usage=4096 であり、`@export` を外すとテストが落ちる。
+- **新規スクリプトを足すと Godot が `.gd.uid` を生成する**(タスク 1.1)。`.gitignore` の対象外で追跡されるため、スクリプトと `.uid` を対にしてステージする。
+- **テストスイートは `GdUnitTestSuite`(`Node` 派生)**(タスク 1.1)。ループ変数に `name` を使うと組み込みプロパティを隠すため、別名にする。
 </content>
 </invoke>
