@@ -22,7 +22,7 @@
 
 ## タスク一覧
 
-- [ ] 1. gdUnit4 の取得
+- [x] 1. gdUnit4 の取得
   - [x] 1.1 `scripts/fetch_gdunit4.sh` を新規作成し、版を固定して取得・展開し、`plugin.cfg` の `version` で照合する。既に一致していればダウンロードせず、その旨を標準出力へ出す
     _Requirements: 1.1, 1.2, 1.3, 1.9_
     _Boundary: FetchScript_
@@ -50,7 +50,7 @@
     - 仕様参照: spec.md §6.4、§5.1「プロジェクト設定への影響」
     - 検証コマンド: `test -d addons/gdUnit4 && { git status --porcelain | grep -q 'addons/gdUnit4' && echo NG || echo OK; } || echo "SKIP: addons/gdUnit4 が無い状態では判定できない"`(取得済みであることを前提として明示する)、`grep -c gdUnit4 project.godot`(0 であること)、`git check-ignore -q addons/AsepriteWizard/plugin.cfg && echo NG || echo OK`
 
-- [ ] 2. サンプルのテストスイート
+- [x] 2. サンプルのテストスイート
   - [x] 2.1 (P) `tests/harness/logic_test.gd` を新規作成し、純粋ロジックを検証するテストケースを置く
     _Requirements: 5.2, 5.4_
     _Boundary: SampleTests_
@@ -66,7 +66,7 @@
     - 仕様参照: spec.md §5.4「ノードの後始末」「物理フレームの進行」
     - 検証コマンド: `GODOT_BIN=$(command -v godot) ./addons/gdUnit4/runtest.sh --headless --ignoreHeadlessMode --continue -a res://tests | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt && echo OK`(統計行の `0 orphans` は gdUnit4 v6.2.0 の出力で確認済みの表記。書式が変わっていた場合は統計行の orphans の値が 0 であることを読み替えて判定する)
 
-- [ ] 3. 実行スクリプトの前提整備
+- [x] 3. 実行スクリプトの前提整備
   - [x] 3.1 `scripts/run_tests.sh` を新規作成し、Godot の解決と `timeout` の解決を**それぞれ独立した異常系**として実装する。どちらか一方が欠けても標準エラーへ出力して終了コード 1 で終わる。`timeout` の不在時は入手方法(Homebrew の `coreutils`)も出す
     _Requirements: 3.4, 3.6_
     _Boundary: RunScript_
@@ -100,7 +100,7 @@
     - 仕様参照: spec.md §5.2 の定義と入力
     - 検証コマンド: `./scripts/run_tests.sh res://tests/harness | grep -q 'res://tests/harness' && echo OK`(引数を渡した場合)、`./scripts/run_tests.sh | grep -q 'res://tests$' && echo OK`(省略した場合の既定値)
 
-- [ ] 4. 実行スクリプトのテスト実行と終了コードの確定
+- [x] 4. 実行スクリプトのテスト実行と終了コードの確定
   - [x] 4.1 gdUnit4 の実行前に `reports/` を削除し、`--headless --ignoreHeadlessMode --continue -rd res://reports` を付けて起動する。レポートが出力されることを確認する
     _Requirements: 3.2, 3.3, 7.1, 7.5_
     _Boundary: RunScript_
@@ -132,7 +132,7 @@
     - 仕様参照: spec.md §5.2 副作用 7、§7 Requirement 8
     - 検証コマンド(**bash で実行する**): `grep -q '^TIMEOUT_SECONDS=120$' scripts/run_tests.sh && echo OK`(既定値)、`cp scripts/run_tests.sh /tmp/r.orig; sed -i.bak 's/^TIMEOUT_SECONDS=120$/TIMEOUT_SECONDS=1/' scripts/run_tests.sh; ./scripts/run_tests.sh; rc=$?; cp /tmp/r.orig scripts/run_tests.sh; rm -f /tmp/r.orig scripts/run_tests.sh.bak; test $rc -eq 124 && echo OK`(定数を一時的に 1 秒へ下げて超過させ、確認後に復元する。`sed -i ''` は BSD sed 専用のため `sed -i.bak` を使う)
 
-- [ ] 5. `make test` の入口
+- [x] 5. `make test` の入口
   - [x] 5.1 `Makefile` に `test` ターゲットを追加する。`TESTS` 変数で対象を切り替え、終了コードをそのまま伝え、既定ターゲット `all` に依存させない。版の値を書かない
     _Requirements: 1.1, 2.1, 2.2, 2.3, 2.4, 2.6_
     _Boundary: Makefile_
@@ -148,8 +148,8 @@
     - 仕様参照: spec.md §7 Requirement 8.3
     - 検証コマンド: `time make test`(real が 30 秒以下であること)
 
-- [ ] 6. CI ワークフロー
-  - [ ] 6.1 `.github/workflows/test.yml` を新規作成する。`pull_request` と `main` への `push` で起動し、Godot 4.7.1 の Linux ビルドを URL 固定で取得して `make test` を実行する。Godot の取得はテスト実行とは別のステップに分ける。版の値を書かない
+- [x] 6. CI ワークフロー
+  - [x] 6.1 `.github/workflows/test.yml` を新規作成する。`pull_request` と `main` への `push` で起動し、Godot 4.7.1 の Linux ビルドを URL 固定で取得して `make test` を実行する。Godot の取得はテスト実行とは別のステップに分ける。版の値を書かない
     _Requirements: 1.1, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
     _Boundary: CI_
     _Depends: 5.1_
@@ -162,7 +162,7 @@
       - 1.1(版の値を書かない): `V=$(sed -n 's/^GDUNIT4_VERSION=//p' scripts/fetch_gdunit4.sh | tr -d '"'); grep -c "$V" .github/workflows/test.yml`(0 であること)
       - 6.5: 意図的に失敗するテストを 1 件足した状態で push し、`gh pr checks` が失敗することを確認してから戻す
       - 6.6: Godot の取得 URL を一時的に存在しない値へ変えて push し、失敗するステップが取得のステップであることを `gh run view --log-failed` で確認してから戻す
-  - [ ] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
+  - [x] 6.2 `reports/` をアーティファクトとしてアップロードする。保存期間を 14 日とし、テストの成否とレポートの有無にかかわらずこのステップでジョブを失敗させない
     _Requirements: 7.2, 7.3, 7.4_
     _Boundary: CI_
     _Depends: 6.1_
@@ -172,7 +172,7 @@
       - 7.2・7.3: `test "$(grep -c 'uses: actions/upload-artifact' .github/workflows/test.yml)" -eq 1 && grep -q '^          retention-days: 14$' .github/workflows/test.yml && grep -q 'if: always()' .github/workflows/test.yml && echo OK`(アップロードのステップが 1 つあり、保存期間の値が 14 で、成否によらず実行されること)、push 後に `gh run view --log` でアップロードのステップが成功していることを確認する
       - 7.4: 存在しないテストパスを指定して `make test` を失敗させ(`reports/` が生成されない状態)、push してアップロードのステップがジョブを失敗させないことを `gh run view --log` で確認してから戻す
 
-- [ ] 7. ドキュメント反映
+- [x] 7. ドキュメント反映
   - [x] 7.1 `docs/testing.md` を新規作成し、テストスイートの配置・命名・アサーション・後始末・禁止事項を記す。gdUnit4 の版の値は書かない
     _Requirements: 1.1, 5.1_
     _Boundary: Docs_
@@ -199,4 +199,6 @@
 - **タイムアウトで包む範囲**(タスク 4.4): gdUnit4 の起動だけを包み、取得とインポートは含めない。124 が「テストが終わらない」以外(ネットワークの遅さ・初回インポートの所要時間)でも出ると原因を切り分けられず、要件 8.3 の計測が取得済み・キャッシュ済みの状態を前提にしていることとも合わないため。spec.md §5.2 副作用 7 の「全体を 120 秒のタイムアウトで包む」はスクリプト全体とも読めるため、文言の擦り合わせが要る(実装後の報告事項)。
 - **`--godot_binary` には絶対パスを渡す**(タスク 4.1)。`addons/gdUnit4/runtest.sh` は `[ ! -f "$godot_binary" ]` で実行ファイルの存在を確かめるため、`godot` のままでは `does not exist` で止まる。`GODOT_BIN` 経由でも同じ検査を通る。
 - **正常なスイートとパースエラーのスイートが混在する経路**は 3 回とも終了コード 134 でレポートが出力される(spec.md §3・§8 の記述どおり)。件数判定では検出できず、0 以外の透過で失敗になる。パースエラーのみの経路は 1・1・105 と割れた(0 は出ない)。
+- **CI の失敗検証の結果**(タスク 6.1・6.2): 3 件とも意図した経路で失敗した。6.5 は `Run tests` が失敗しジョブが失敗(`Upload reports` は成功)。6.6 は `Install Godot` が `curl: (22) ... 404` で失敗し `Run tests` はスキップ。7.4 は `reports/` が生成されない回でも `Upload reports` が成功しジョブを失敗させなかった。いずれも確認後にワークフローとテストを元へ戻し、CI がグリーンに戻ることを確認した。
+- **GNU make はレシピの失敗を終了コード 2 へ丸める**(タスク 5.1)。`make test` は成否だけを表す。原因を終了コードで切り分けるときは `scripts/run_tests.sh` を直接呼ぶ。この制約により spec の要件 2.3 を改訂した。
 - **tasks.md タスク 2.2 の検証コマンドの不備**: `... | tee /tmp/o.txt | grep -q 'scene_test.gd'; grep -q '0 orphans' /tmp/o.txt` は、`grep -q` が最初の一致で終了して `tee` が SIGPIPE で死ぬため `/tmp/o.txt` が途中で切れ、2 本目の判定が偽陰性になる。判定には出力をファイルへリダイレクトしてから grep する形(`... > /tmp/o.txt 2>&1; grep -q ... /tmp/o.txt`)を使った。同じ形の検証コマンドが他タスクにもあるため、パイプで `grep -q` に渡す判定は同じ置き換えを行う。
