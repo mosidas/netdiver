@@ -82,17 +82,21 @@ func kind() -> int                                # EnemyKind.Kind。派生ク�
 - 重力に従う。`_physics_process` の重力は `EnemyStats.gravity` から読む(`PlayerStats` の値や定数を直書きしない)
 - **placeholder と衝突形状**: `ColorRect` と `CollisionShape2D` をともに 16×16px とし、ノードの原点を矩形の中心に置く。`Hurtbox` の形状は本体の衝突形状と同じ矩形とし、本体からはみ出させない(はみ出すと、弾の解放(本体との接触)と被弾(`Hurtbox`)の片方だけが成立しうる)
 - **標的の解決**: `@export var target: Node2D` を持ち、標的を外から注入する。仮ステージはシーンの宣言(`[node]` のプロパティ)で `Player` を指す。**これはテストが標的を差し替えるための公開点であり、契約の一部である**(unit #2 の `Player.input_source` と同じ位置づけ)
-- **標的が不在のフレーム**: `target` が `null`(または解放済み)のとき、`push_error` を出さず、標的までの距離を `INF` として `Brain` へ渡す。索敵範囲・突進の到達距離のいずれも満たさないため、敵は `IDLE` に留まり水平には動かない。異常ではなく想定内の状態として扱うのは、シーン構成を検証するテストが敵を単体で生成する経路を正常な使い方に含めるためである
+- **標的が不在のフレーム**: `target` が `null`(または解放済み)のとき、`push_error` を出さず、標的までの距離を `INF` として `Brain` へ渡す。異常ではなく想定内の状態として扱うのは、シーン構成を検証するテストが敵を単体で生成する経路を正常な使い方に含めるためである
+- **標的を失った時点の状態で挙動が分かれる**: `IDLE` の間に失った場合は索敵範囲・突進の到達距離のいずれも満たさないため `IDLE` に留まり、水平には動かない(§7 1.15)。**`TELEGRAPH`・`CHARGE`・`RECOVER`・`COOLDOWN` の途中で失った場合は、§7 2.7 が優先し、進行中の状態遷移を最後まで完走する**(距離の変化で遷移を打ち切らない)
+- **`kind()` の基底実装**: `Enemy` を直接生成した場合に備え、基底は `EnemyKind.Kind.CHARGER` を返す。派生クラスが必ず上書きする
 
 ### 5.2 `ChargerEnemy`(`Enemy`)
 
 ```gdscript
 class_name ChargerEnemy extends Enemy
+var brain: ChargerBrain                           # テストのための公開点(契約の一部)
 ```
 
 - `ChargerBrain` を 1 つ持ち、毎物理フレーム `target` までの距離を算出して `update()` に渡す(`target` が `null` なら `INF`)
 - `ChargerBrain.state` に応じて水平の速度を決める。`IDLE` では距離が `stats.detect_range` 以下のときだけ `stats.move_speed` でプレイヤーへ接近し(範囲外では停止)、`CHARGE` では突進を始めた時点の向きへ `stats.attack_speed` で進み、`TELEGRAPH` と `RECOVER` では停止する
-- `Attackbox`(子の `Area2D`)の `monitoring` を `ChargerBrain.is_attack_active` に一致させる
+- `Attackbox`(子の `Area2D`)の `monitoring` を `brain.is_attack_active` に一致させる
+- `_ready()` で `Attackbox.damage` に `stats.attack_damage` を代入する(シーンへ値を焼き込まない。§7 8.1)
 - `kind()` は `EnemyKind.Kind.CHARGER` を返す
 
 ### 5.3 `ShooterEnemy`(`Enemy`)
@@ -100,10 +104,12 @@ class_name ChargerEnemy extends Enemy
 ```gdscript
 class_name ShooterEnemy extends Enemy
 @export var projectile_scene: PackedScene
+var brain: ShooterBrain                           # テストのための公開点(契約の一部)
 ```
 
 - `ShooterBrain` を 1 つ持ち、毎物理フレーム `target` までの距離を算出して `update()` に渡す(`target` が `null` なら `INF`)。戻り値が真のフレームで敵弾を 1 発生成し、`target` へ向かう単位ベクトルの向きへ発射する
 - 水平には移動しない(重力にのみ従う)
+- 敵弾は**自分の親(`get_parent()`)へ追加する**。自分の子にすると、弾が発射元と一緒に動いてしまう(unit #2 の `Player` が同じ理由で `get_parent()` を選んでいる)。発射位置は敵自身の位置とし、`add_child()` して位置を決めてから `launch()` を呼ぶ(§5.7 の事前条件)
 - `projectile_scene` が未設定の場合は `push_error` を出し、弾を生成しない(`Player`(unit #2)の同名の扱いに揃える)
 - `kind()` は `EnemyKind.Kind.SHOOTER` を返す
 
@@ -227,7 +233,7 @@ class_name EnemyStats extends Resource
 | `attack_speed` | 150.0 | 120.0 | `CombatLimits.ENEMY_BULLET_MAX_SPEED`(150.0)の内側。弾は余裕を残して 120.0、突進は上限そのもの |
 | `attack_duration` | 0.6 | 0.0 | 突進の到達距離 `150.0 * 0.6` = 90px。射撃型は突進を持たないため 0.0 |
 | `recover_time` | 0.8 | 1.5 | 突進型の硬直 0.8 秒は主武器 0.12 秒間隔で 6 発(60 ダメージ)が入る長さで、撃破の機会になる。射撃型は発射の周期の待ち |
-| `bullet_max_distance` | 0.0 | 216.0 | 弾速 120 px/s で 1.8 秒。発射の周期(`telegraph_time` 0.4 + `recover_time` 1.5 = 1.9 秒)より短いため、1 体の射撃型から同時に 2 発が存在しない。画面幅 320px の 2/3 で、画面を横切る前に消える。突進型は弾を持たないため 0.0 |
+| `bullet_max_distance` | 0.0 | 216.0 | 弾速 120 px/s で 1.8 秒。発射の周期(`telegraph_time` 0.4 + `recover_time` 1.5 = 1.9 秒)より短いため、1 体の射撃型から同時に 2 発が存在しない。画面幅 320px のおよそ 3 分の 2(216 / 320 = 0.675)で、画面を横切る前に消える。突進型は弾を持たないため 0.0 |
 
 - **不変条件**: `max_hp`・`gravity`・`detect_range`・`telegraph_time`・`attack_damage`・`attack_speed` は正。`move_speed`・`attack_duration`・`recover_time`・`bullet_max_distance` は 0 以上とし、**0 は「その振る舞いを持たない」ことを表す**(射撃型の `move_speed`・`attack_duration`、突進型の `bullet_max_distance`)。満たさない値が設定された場合は `Enemy._ready()` の検査で `push_error` を出す
 - **既定値の実体は `.tres` に置く**(`src/enemy/charger_stats.tres` / `shooter_stats.tres`)。シーンへ埋め込むサブリソースにしない。unit #2 の `player.tscn` は `stats` を埋め込みサブリソースにしたため、`resource_local_to_scene` が無く複数インスタンス化すると値が共有される(同 `tasks.md` の申し送り)。`.tres` を各シーンから参照する形にし、インスタンスごとに値を変えたい場合は `resource_local_to_scene` を真にする
@@ -288,7 +294,7 @@ tests/stage/    ...
 
 ### Requirement 1: 敵の共通の体力と撃破
 
-**対象**: §5.1 `Enemy` / §6.1 `EnemyStats` / §6.3 `EnemyKind`
+**対象**: §5.1 `Enemy` / §5.2 `ChargerEnemy` / §5.3 `ShooterEnemy` / §6.1 `EnemyStats` / §6.3 `EnemyKind`
 
 **受け入れ基準**:
 
@@ -306,8 +312,14 @@ tests/stage/    ...
 1.12. システムは、`ColorRect` と `CollisionShape2D` をともに 16×16px とし、ノードの原点を矩形の中心に置かなければならない。(常時)
 1.13. システムは、`Hurtbox` の形状を本体の衝突形状と同じ矩形とし、本体の外へはみ出させてはならない。(常時)
 1.14. `target` が `null` または解放済みの状態で物理フレームが進む場合、システムは `push_error` を出さず、標的までの距離を `INF` として扱わなければならない。(異常系)
-1.15. `target` が `null` の間、システムは水平の速度を 0 とし、`Brain` の `state` を `IDLE` のまま保たなければならない。(状態)
+1.15. `brain.state` が `IDLE` の状態で `target` が `null` である間、システムは水平の速度を 0 とし、`state` を `IDLE` のまま保たなければならない(`IDLE` 以外の状態で標的を失った場合は 2.7 が優先する)。(状態)
 1.16. システムは、`target` を外から代入できる公開点として保たなければならない(内部で標的を検索して上書きしない)。(常時)
+1.17. `is_on_floor()` が偽の間、システムは垂直の速度を毎物理フレーム `stats.gravity * delta` だけ増やさなければならない。(状態)
+1.18. `is_on_floor()` が真の間、システムは垂直の速度を 0 としなければならない(接地中に重力が蓄積しないようにする)。(状態)
+1.19. システムは、`_physics_process` で速度を決めた後に `move_and_slide()` を呼ばなければならない。(常時)
+1.20. システムは、`ChargerBrain.update()`・`ShooterBrain.update()` の中で `move_and_slide()` を呼んではならない。(常時)
+1.21. 水平の速度を持つ敵がシーンツリーの上で 3 物理フレームぶん進んだとき、システムは水平の位置をその速度と `Engine.physics_ticks_per_second` から定まる値だけ変えなければならない(許容差 0.001)。(イベント)
+1.22. システムは、`brain` を外から読める公開点として持たなければならない。(常時)
 
 ### Requirement 2: 突進型の状態遷移
 
@@ -417,7 +429,7 @@ tests/stage/    ...
 
 ### Requirement 9: 仮ステージと配置規約
 
-**対象**: §5.8 `EnemyDevStage`
+**対象**: §5.8 `EnemyDevStage` / §5.3 `ShooterEnemy` / §6.5 ファイルの配置
 
 **受け入れ基準**:
 
@@ -426,11 +438,14 @@ tests/stage/    ...
 9.1. システムは、床・壁と `Player`・`ChargerEnemy`・`ShooterEnemy` を配置したシーンを 1 つ持たなければならない。(常時)
 9.2. システムは、プレイヤーの初期位置から敵の位置までの距離が `160 + その敵の detect_range` 以下となる敵を、2 体までとしなければならない(索敵範囲の円が脅威の圏と交わる敵の数)。(常時)
 9.3. `player.died` が発火したとき、システムは現在のシーンを再読込しなければならない。(イベント)**この基準は自動テストでは検証せず**、`godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn` で起動して目視で確認し、結果を `tasks.md` の `## Implementation Notes` に記録する(理由: gdUnit4 のテストツリーで `reload_current_scene()` を呼ぶと、テストの実行そのものが読み込むシーンを差し替える。unit #2 の 7.2 と同じ扱い)。
-9.7. システムは、`run/main_scene` を `res://main.tscn` から変更してはならない。(常時)
-9.8. システムは、`docs/testing.md` に `enemy_dev_stage.tscn` の起動方法を追記しなければならない(既存の「仮ステージを目視で確認する」の節に並べる)。(常時)
 9.4. システムは、`died` の接続をシーンの `[connection]` として宣言しなければならない(`_ready()` で接続しない)。(常時)
 9.5. システムは、既存の `dev_stage.tscn` を変更してはならない。(常時)
 9.6. システムは、敵の出現を動的に行う仕組み(スポナー)を持ってはならない。(常時)
+9.7. システムは、`run/main_scene` を `res://main.tscn` から変更してはならない。(常時)
+9.8. システムは、`docs/testing.md` に `enemy_dev_stage.tscn` の起動方法を追記しなければならない(既存の「仮ステージを目視で確認する」の節に並べる)。(常時)
+9.9. システムは、`enemy_dev_stage.tscn` の各敵の `target` をシーンの宣言で `Player` ノードへ指さなければならない(`_ready()` で検索しない)。(常時)
+9.10. システムは、`shooter_enemy.tscn` の `projectile_scene` に `enemy_projectile.tscn` を設定しなければならない。(常時)
+9.11. システムは、§6.5 のファイルの配置とテストの配置の規約(`docs/testing.md`)に従わなければならない。(常時)
 
 ### Requirement 10: 衝突レイヤの割り当て
 
@@ -450,6 +465,7 @@ tests/stage/    ...
 - **凍結済みの契約に触れない**: `Projectile`(unit #2 §5.6)は変更せず、被弾の適用を敵側(`Hurtbox`)で受け取る。弾の解放は `Projectile` 自身の `body_entered` に任せる。
 - **相手を型ではなくメソッド・プロパティの有無で見る**: `Attackbox` と `EnemyProjectile` は `has_method(&"take_damage")` で、`Hurtbox` は `damage` プロパティの有無で相手を判別する。`DamageZone`(unit #2 §5.8)と同じ形で、単位を跨ぐ静的な依存を作らない。
 - **滞在時間の判定は `delta` を足す前に行う**: 同じ `delta` を 2 つの状態へ数えると、予備動作から攻撃までが `telegraph_time` より短くなる。unit #2 の `Health`・`SecondaryWeapon` が採った形に揃える。
+- **`move_and_slide()` は `_physics_process` の中だけで呼ぶ**: unit #2 が実測で確かめた検証済みの前提(テスト本体から呼ぶと描画フレームの `delta` が使われ、100 px/s・3 回で期待 5.0px に対し 2.37px・10.58px と割れた。同 spec §3)に従う。`Brain` は純ロジックであり移動を行わない(§7 1.19・1.20)。
 - **用語集は持たない**: プロジェクトに `docs/glossary.md` が無いため、既存コードの語彙(`stats`・`take_damage`・`damage`)に合わせる。
 - **`EnemyState` の 5 値を 2 種で共有する**: 種別ごとに enum を分けると unit #4 が読み替えを要する。使わない値を持つことを許す。
 
