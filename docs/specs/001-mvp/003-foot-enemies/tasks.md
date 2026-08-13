@@ -110,7 +110,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 1.8 のフォールバックは値を代入する側であり、1.9 は代入しない(値は補正しない)。この非対称をテストで固定する
       - `_ready()` を通す必要があるため、`Enemy.new()` を `add_child()` する(`add_child()` は同期で `_ready()` まで走り物理フレームは進まない。unit #2 の申し送り)。`auto_free()` と対にする
     - 検証コマンド: `make test TESTS=res://tests/enemy`
-  - [ ] 2.3 `charger_enemy.tscn` の骨格(placeholder・衝突形状・レイヤ)と `Enemy` の物理(重力・接地・`move_and_slide()`)・標的の解決を実装する
+  - [x] 2.3 `charger_enemy.tscn` の骨格(placeholder・衝突形状・レイヤ)と `Enemy` の物理(重力・接地・`move_and_slide()`)・標的の解決を実装する
     _Requirements: 1.12, 1.14, 1.16, 1.17, 1.18, 1.19, 8.7, 10.1_
     _Boundary: Enemy_
     _Depends: 2.2_
@@ -352,6 +352,15 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 通しの実行(`skipped` と `orphans` が 0 であることまで機械判定する): `make test > /tmp/alltests.txt 2>&1; rc=$?; s=$(grep -oE '[0-9]+ skipped' /tmp/alltests.txt | tail -1 | grep -oE '^[0-9]+'); o=$(grep -oE '[0-9]+ orphans' /tmp/alltests.txt | tail -1 | grep -oE '^[0-9]+'); echo "rc=$rc skipped=$s orphans=$o"; test "$rc" -eq 0 && test "$s" = 0 && test "$o" = 0 && echo OK`
 
 ## Implementation Notes
+
+### 実装中の学習(タスク 2.3 以降)
+
+- **接地中の `velocity.y = 0` は「フレームの終わりの値」では固定できない**(タスク 2.3)。`move_and_slide()` が床との衝突で垂直の速度を自分で 0 へ戻すため、`_update_velocity()` から接地の分岐を消して重力を足し続ける変異が、`await` の後に `velocity.y == 0.0` を見るテストを素通りする。**速度の決定(`_update_velocity(DELTA)`)だけを同期で呼んで観測する**形にして検出できるようになった。**「移動の直前に決めた速度」を検証する後続の場面(3.3 の水平速度、4.1)で同じ落とし穴に当たること。**
+- **`_update_velocity(delta)` を派生の拡張点として基底に置いた**(タスク 2.3)。`ChargerEnemy`(タスク 3.3)は `super._update_velocity(delta)` を呼んでから水平の速度を足す。`move_and_slide()` は基底の `_physics_process` だけが持ち、派生には持たせない(要件 1.20 の担保に効く)。
+- **シーンが指す `.tres` は全個体で共有される**(タスク 2.3)。物理を検証するテストで `enemy.stats.gravity` を直接書き換えると他のテストへ波及するため、`EnemyStats.new()` を作って `stats` ごと差し替える(`tests/enemy/enemy_test.gd` の `_create_embodied_enemy()`)。**`.tres` 由来の数値を変えるテストは後続でも同じ形を採ること。**
+- **Godot 4.7 では解放済みオブジェクトの参照は `== null` が真を返す**(タスク 2.3 で実測)。`is_instance_valid(target)` を `target == null` へ弱める変異は等価であり、テストでは区別できない。ガードそのものを削除する変異は検出される。
+- **`push_error` を出さないことの検証は、実際に標的を扱う関数を包む**(タスク 2.3)。`_physics_process()` を包むだけでは、標的の扱いが `target_distance()` にあるうちは `target_distance()` へ `push_error` を足す変異が素通りする(レビューが実測)。戻り値は `Array` へ控えて `assert_error(...).is_success()` の外から読む(lambda はローカル変数を値コピーで捕捉するため)。
+- **実装のソースを読む静的な検査は、関数の本体だけを取り出す**(タスク 2.3)。「次の `func ` 行まで」を本体と見なすと、次の関数へ付けた列 0 のコメントまで混ざり、コメントの語がアサーションを揺らす(順序の変異が素通りしうる)。`\t` で始まる行だけを拾う形に是正した。
 
 ### 知識 port の選択
 

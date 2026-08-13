@@ -29,6 +29,9 @@ const ZERO_ALLOWED_STAT_NAMES: Array[String] = [
 		if stats != null:
 			hp = stats.max_hp
 
+## 標的。外から注入する差し替え口であり、契約の一部である。内部で検索して上書きしない
+@export var target: Node2D
+
 var hp: int
 var is_defeated: bool = false
 
@@ -66,6 +69,31 @@ func take_damage(amount: int) -> void:
 ## 敵の種別。派生クラスが上書きする。
 func kind() -> int:
 	return EnemyKind.Kind.CHARGER
+
+
+## 標的までの距離。標的が不在なら `INF` を返す。
+##
+## 不在を異常として扱わない: シーンの構成を検証する経路は敵を単体で生成し、標的を持たない
+func target_distance() -> float:
+	if not is_instance_valid(target):
+		return INF
+	return global_position.distance_to(target.global_position)
+
+
+func _physics_process(delta: float) -> void:
+	_update_velocity(delta)
+	move_and_slide()
+
+
+# 速度の決定を本体の移動から切り出す: 派生クラスは水平の速度をここへ足す。移動そのものを
+# 派生へ持たせると、上書きのたびに呼び忘れの余地が生まれる
+func _update_velocity(delta: float) -> void:
+	if is_on_floor():
+		# 接地中に垂直の速度を 0 へ戻す: 重力が蓄積したままだと、地形から離れた直後の落下が
+		# 速くなる
+		velocity.y = 0.0
+	else:
+		velocity.y += stats.gravity * delta
 
 
 # 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`EnemyStats` へ
