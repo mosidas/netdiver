@@ -55,6 +55,7 @@ netdiver の徒歩パートに雑魚敵 2 種(突進型・射撃型)を置き、
 | 攻撃判定 | 敵がプレイヤーへダメージを与える領域。`Attackbox`(突進型)と `EnemyProjectile`(射撃型) |
 | 被弾判定 | 敵がプレイヤーの弾からダメージを受ける領域。`Hurtbox` |
 | 脅威の圏 | 配置規約の検査に使う、プレイヤーの初期位置を中心とする半径 160px の円 |
+| 標的 | 敵が距離と向きを測る相手。`Enemy.target`。仮ステージでは `Player` を指す |
 
 ## 5. 公開インターフェース(API)
 
@@ -64,6 +65,7 @@ netdiver の徒歩パートに雑魚敵 2 種(突進型・射撃型)を置き、
 class_name Enemy extends CharacterBody2D
 signal defeated(kind: int)                        # EnemyKind.Kind
 @export var stats: EnemyStats
+@export var target: Node2D                        # 標的。テストのための差し替え口でもある
 var hp: int
 var is_defeated: bool
 func take_damage(amount: int) -> void
@@ -79,7 +81,8 @@ func kind() -> int                                # EnemyKind.Kind。派生ク�
 - **エラー**: いずれも `push_error` で表出する。例外・戻り値による表出は行わない
 - 重力に従う。`_physics_process` の重力は `EnemyStats.gravity` から読む(`PlayerStats` の値や定数を直書きしない)
 - **placeholder と衝突形状**: `ColorRect` と `CollisionShape2D` をともに 16×16px とし、ノードの原点を矩形の中心に置く。`Hurtbox` の形状は本体の衝突形状と同じ矩形とし、本体からはみ出させない(はみ出すと、弾の解放(本体との接触)と被弾(`Hurtbox`)の片方だけが成立しうる)
-- **標的の解決**: `[要確認: 敵がプレイヤー(標的)を取得する方法。テストからの差し替え口と、標的が不在のフレームの挙動を含む]`
+- **標的の解決**: `@export var target: Node2D` を持ち、標的を外から注入する。仮ステージはシーンの宣言(`[node]` のプロパティ)で `Player` を指す。**これはテストが標的を差し替えるための公開点であり、契約の一部である**(unit #2 の `Player.input_source` と同じ位置づけ)
+- **標的が不在のフレーム**: `target` が `null`(または解放済み)のとき、`push_error` を出さず、標的までの距離を `INF` として `Brain` へ渡す。索敵範囲・突進の到達距離のいずれも満たさないため、敵は `IDLE` に留まり水平には動かない。異常ではなく想定内の状態として扱うのは、シーン構成を検証するテストが敵を単体で生成する経路を正常な使い方に含めるためである
 
 ### 5.2 `ChargerEnemy`(`Enemy`)
 
@@ -87,7 +90,7 @@ func kind() -> int                                # EnemyKind.Kind。派生ク�
 class_name ChargerEnemy extends Enemy
 ```
 
-- `ChargerBrain` を 1 つ持ち、毎物理フレーム `update()` を呼ぶ
+- `ChargerBrain` を 1 つ持ち、毎物理フレーム `target` までの距離を算出して `update()` に渡す(`target` が `null` なら `INF`)
 - `ChargerBrain.state` に応じて水平の速度を決める。`IDLE` では距離が `stats.detect_range` 以下のときだけ `stats.move_speed` でプレイヤーへ接近し(範囲外では停止)、`CHARGE` では突進を始めた時点の向きへ `stats.attack_speed` で進み、`TELEGRAPH` と `RECOVER` では停止する
 - `Attackbox`(子の `Area2D`)の `monitoring` を `ChargerBrain.is_attack_active` に一致させる
 - `kind()` は `EnemyKind.Kind.CHARGER` を返す
@@ -99,7 +102,7 @@ class_name ShooterEnemy extends Enemy
 @export var projectile_scene: PackedScene
 ```
 
-- `ShooterBrain` を 1 つ持ち、毎物理フレーム `update()` を呼ぶ。戻り値が真のフレームで敵弾を 1 発生成し、プレイヤーへ向かう単位ベクトルの向きへ発射する
+- `ShooterBrain` を 1 つ持ち、毎物理フレーム `target` までの距離を算出して `update()` に渡す(`target` が `null` なら `INF`)。戻り値が真のフレームで敵弾を 1 発生成し、`target` へ向かう単位ベクトルの向きへ発射する
 - 水平には移動しない(重力にのみ従う)
 - `projectile_scene` が未設定の場合は `push_error` を出し、弾を生成しない(`Player`(unit #2)の同名の扱いに揃える)
 - `kind()` は `EnemyKind.Kind.SHOOTER` を返す
@@ -172,6 +175,7 @@ var damage: int
 
 - `player.died` を受けて `get_tree().reload_current_scene()` を呼ぶ(`DevStage`(unit #2 §5.7)と同じ形。接続はシーンの `[connection]` で宣言する)
 - **既存の `dev_stage.tscn` は変更しない**
+- 各敵の `target` にシーンの宣言で `Player` を指す(`_ready()` で検索しない。§5.1)
 - 敵の配置は §7 Requirement 9 の配置規約を満たす
 - **`run/main_scene` は変更しない**(`res://main.tscn` のまま)。起動は `godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn` で行い、その手順を `docs/testing.md` へ追記する
 
@@ -223,7 +227,7 @@ class_name EnemyStats extends Resource
 | `attack_speed` | 150.0 | 120.0 | `CombatLimits.ENEMY_BULLET_MAX_SPEED`(150.0)の内側。弾は余裕を残して 120.0、突進は上限そのもの |
 | `attack_duration` | 0.6 | 0.0 | 突進の到達距離 `150.0 * 0.6` = 90px。射撃型は突進を持たないため 0.0 |
 | `recover_time` | 0.8 | 1.5 | 突進型の硬直 0.8 秒は主武器 0.12 秒間隔で 6 発(60 ダメージ)が入る長さで、撃破の機会になる。射撃型は発射の周期の待ち |
-| `bullet_max_distance` | 0.0 | 240.0 | 弾速 120 px/s で 2.0 秒。画面幅 320px を横切る前に消える。突進型は弾を持たないため 0.0 |
+| `bullet_max_distance` | 0.0 | 216.0 | 弾速 120 px/s で 1.8 秒。発射の周期(`telegraph_time` 0.4 + `recover_time` 1.5 = 1.9 秒)より短いため、1 体の射撃型から同時に 2 発が存在しない。画面幅 320px の 2/3 で、画面を横切る前に消える。突進型は弾を持たないため 0.0 |
 
 - **不変条件**: `max_hp`・`gravity`・`detect_range`・`telegraph_time`・`attack_damage`・`attack_speed` は正。`move_speed`・`attack_duration`・`recover_time`・`bullet_max_distance` は 0 以上とし、**0 は「その振る舞いを持たない」ことを表す**(射撃型の `move_speed`・`attack_duration`、突進型の `bullet_max_distance`)。満たさない値が設定された場合は `Enemy._ready()` の検査で `push_error` を出す
 - **既定値の実体は `.tres` に置く**(`src/enemy/charger_stats.tres` / `shooter_stats.tres`)。シーンへ埋め込むサブリソースにしない。unit #2 の `player.tscn` は `stats` を埋め込みサブリソースにしたため、`resource_local_to_scene` が無く複数インスタンス化すると値が共有される(同 `tasks.md` の申し送り)。`.tres` を各シーンから参照する形にし、インスタンスごとに値を変えたい場合は `resource_local_to_scene` を真にする
@@ -301,6 +305,9 @@ tests/stage/    ...
 1.11. システムは、突進型の `kind()` を `EnemyKind.Kind.CHARGER`、射撃型の `kind()` を `EnemyKind.Kind.SHOOTER` としなければならない。(常時)
 1.12. システムは、`ColorRect` と `CollisionShape2D` をともに 16×16px とし、ノードの原点を矩形の中心に置かなければならない。(常時)
 1.13. システムは、`Hurtbox` の形状を本体の衝突形状と同じ矩形とし、本体の外へはみ出させてはならない。(常時)
+1.14. `target` が `null` または解放済みの状態で物理フレームが進む場合、システムは `push_error` を出さず、標的までの距離を `INF` として扱わなければならない。(異常系)
+1.15. `target` が `null` の間、システムは水平の速度を 0 とし、`Brain` の `state` を `IDLE` のまま保たなければならない。(状態)
+1.16. システムは、`target` を外から代入できる公開点として保たなければならない(内部で標的を検索して上書きしない)。(常時)
 
 ### Requirement 2: 突進型の状態遷移
 
@@ -405,6 +412,8 @@ tests/stage/    ...
 8.3. `move_speed`・`attack_duration`・`bullet_max_distance` に 0.0 が設定されたとき、システムはこれを「その振る舞いを持たない」として扱い、`push_error` を出してはならない。(イベント)
 8.4. `max_hp`・`gravity`・`detect_range`・`telegraph_time`・`attack_damage`・`attack_speed` に 0 以下が設定された状態で `_ready()` が呼ばれた場合、システムは `push_error` を出さなければならない。(異常系)
 8.5. システムは、突進型・射撃型の既定値を §6.1 の表のとおりとしなければならない。(常時)
+8.6. システムは、射撃型の弾の寿命(`bullet_max_distance / attack_speed`)を、発射の周期(`telegraph_time + recover_time`)より短くしなければならない(1 体の射撃型から同時に 2 発を存在させない)。(常時)
+8.7. システムは、既定値の実体を `.tres` として持ち、シーンへ埋め込むサブリソースにしてはならない。(常時)
 
 ### Requirement 9: 仮ステージと配置規約
 
