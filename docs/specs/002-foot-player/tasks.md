@@ -280,7 +280,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 機械検査の対象は `PlayerStats` の既定値のうち**小数の 11 項目(重複する 400.0 を除いて 10 種のリテラル)**とする。整数の 3 個(`max_health` = 100、`primary_damage` = 10、`secondary_damage` = 50)は無関係な整数と衝突して誤検出が多いため grep から外し、要件 3.3・4.7・6.x のテスト(値が `stats` 経由で流れることを検証する)で担保する
       - 無関係な小数リテラルが偶然一致した場合は、その旨と根拠を `## Implementation Notes` に記録してから除外する(判定を黙って緩めない)
     - 検証コマンド: `grep -rnE '(^|[^0-9.])(100\.0|600\.0|240\.0|3\.0|20\.0|0\.12|400\.0|0\.8|2\.0|300\.0)([^0-9]|$)' --include='*.gd' src > /tmp/hardcoded.txt; grep -v '^src/player/player_stats.gd:' /tmp/hardcoded.txt > /tmp/hardcoded2.txt; test ! -s /tmp/hardcoded2.txt && echo OK || cat /tmp/hardcoded2.txt`
-  - [ ] 8.3 `docs/testing.md` に `tests/harness/` の位置づけと仮ステージの起動方法を追記する
+  - [x] 8.3 `docs/testing.md` に `tests/harness/` の位置づけと仮ステージの起動方法を追記する
     _Requirements: 9.7, 11.1, 11.2, 11.3_
     _Boundary: Docs_
     _Depends: 7.4_
@@ -384,4 +384,6 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **grep は「値が `stats` から流れていること」を示さない**(タスク 8.2)。直書きが無いことの裏取りとして `player.gd` の 14 項目すべてが `stats.<項目名>` 経由で読まれていることを目視で確認した(`move_speed`・`gravity`・`jump_speed`・`max_health`・`regen_delay`・`regen_per_second`・`primary_interval`・`primary_damage`・`primary_bullet_speed`・`secondary_charge_time`・`secondary_cooldown`・`secondary_damage`・`secondary_bullet_speed`・`bullet_max_distance`)。実質の担保はタスク 5.3・6.3 の変異検証(既定値の直書きで 11 件失敗)にある。
 - **`charge_time` が 0 のときの退化(タスク 5.2 の申し送り)は 8.2 では解消していない**。直書きの問題ではなく `Player._ready()` の検査が `push_error` を出すだけで値を補正しないことに由来する。要件 10.2 の範囲外であり、契約(§6.1 の不変条件は「0 以下が設定された場合は `push_error`」までしか定めない)も変えていない。**補正が要るなら spec の変更を伴う。**
 - **リトライの目視確認は期待どおりに動作した**(タスク 7.4、2026-08-13 に人手で実施)。環境は Godot 4.7.1.stable.official(`Metal 4.0 - Forward+`、Apple M2、macOS)、起動は worktree のルートで `godot --path . res://src/stage/dev_stage.tscn`。右へ歩いて赤い半透明の矩形(`DamageZone`)へ入りそのまま留まると、体力が 0 になった時点でシーンが読み直され、プレイヤーが左端の初期位置へ戻って落下し直し、体力も `max_health` へ戻った(要件 7.2)。実行中に `push_error` などのエラー出力は出なかった。**この 1 件だけが `make test` に現れない確認であり、`DevStage` の再読込の経路を変えたら再実施が要る。**
+- **`docs/testing.md` への追記は 2 箇所に分けた**(タスク 8.3)。仮ステージの起動は `## 実行` の末尾に `### 仮ステージを目視で確認する` として、`tests/harness/` の例外は `## 配置と命名` の末尾(サンプルの案内の直後)に `### tests/harness/ は配置の規約の例外` として置いた。規約そのものの記述(`<実装のディレクトリ構成を写したパス>`)は変えず、例外を後ろに足す形にしている。起動コマンドは実測に合わせて `godot --path <プロジェクトのルート> res://src/stage/dev_stage.tscn` と書き、**`--headless` では目視にならないこと**を明記した。
+- **`tests/harness/` の 2 本は削除・移動しない**(タスク 8.3、要件 11.3)。`git status` で無変更を確認済み。文書側にも「削除・移動しない」「ここに実装対応のテストを足さない」「例外はこの 1 ディレクトリだけ」の 3 点を書いた。
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
