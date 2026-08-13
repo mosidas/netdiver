@@ -9,6 +9,17 @@ signal defeated(kind: int)
 const INVALID_AMOUNT_ERROR_FORMAT: String = (
 	"Enemy.take_damage(): amount は正でなければならない(現在値: %s)。状態を変えずに返る"
 )
+const MISSING_STATS_ERROR: String = "Enemy: stats が設定されていない。既定値の EnemyStats を使う"
+const NON_POSITIVE_STAT_ERROR_FORMAT: String = "Enemy: stats.%s は正でなければならない(現在値: %s)"
+const NEGATIVE_STAT_ERROR_FORMAT: String = "Enemy: stats.%s は 0 以上でなければならない(現在値: %s)"
+
+## 0 が「その振る舞いを持たない」ことを表す項目。実装が名前で持つのはこの集合だけで、
+## 検査の対象そのものは `get_property_list()` から導く
+const ZERO_ALLOWED_STAT_NAMES: Array[String] = [
+	"move_speed",
+	"attack_duration",
+	"bullet_max_distance",
+]
 
 ## 手触りを決める数値。代入した時点で体力を満たす: `_ready()` で満たすと、ツリーへ載せずに
 ## `take_damage()` を呼ぶ経路で体力が 0 のままになる
@@ -20,6 +31,13 @@ const INVALID_AMOUNT_ERROR_FORMAT: String = (
 
 var hp: int
 var is_defeated: bool = false
+
+
+func _ready() -> void:
+	if stats == null:
+		push_error(MISSING_STATS_ERROR)
+		stats = EnemyStats.new()
+	_report_invalid_stats()
 
 
 ## 体力を `amount` だけ減らす。0 に達した最初の 1 回だけ `defeated` を発火し、自身を解放する。
@@ -48,3 +66,24 @@ func take_damage(amount: int) -> void:
 ## 敵の種別。派生クラスが上書きする。
 func kind() -> int:
 	return EnemyKind.Kind.CHARGER
+
+
+# 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`EnemyStats` へ
+# 項目を足したときに検査から漏れる。値は補正しない: 手触りの数値を実装が黙って書き換えると、
+# `.tres` を直した結果と実行時の挙動が食い違う
+func _report_invalid_stats() -> void:
+	for property: Dictionary in stats.get_property_list():
+		var usage: int = property["usage"]
+		if usage & PROPERTY_USAGE_SCRIPT_VARIABLE == 0 or usage & PROPERTY_USAGE_EDITOR == 0:
+			continue
+		var type: int = property["type"]
+		if type != TYPE_FLOAT and type != TYPE_INT:
+			continue
+
+		var stat_name: String = property["name"]
+		var value: Variant = stats.get(stat_name)
+		if ZERO_ALLOWED_STAT_NAMES.has(stat_name):
+			if float(value) < 0.0:
+				push_error(NEGATIVE_STAT_ERROR_FORMAT % [stat_name, value])
+		elif float(value) <= 0.0:
+			push_error(NON_POSITIVE_STAT_ERROR_FORMAT % [stat_name, value])
