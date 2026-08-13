@@ -39,7 +39,19 @@
 
 削除対象はない(本単位は既存の置換・廃止を伴わない)。`addons/gdUnit4/` と `reports/` は生成物であり、この計画には載せない。`.gd` を足すと Godot が `.gd.uid` を生成し追跡対象になるため、スクリプトと `.uid` を対にしてステージする(unit #2 の申し送り)。
 
-**変更してはならない既存ファイル**(要件 9.5・10.5・7.3・スコープ外): `src/stage/dev_stage.tscn`、`src/weapon/combat_limits.gd`、`src/weapon/projectile.gd` / `projectile.tscn`、`src/player/` 一式、`project.godot`。タスク 6.4 が内容ハッシュで確認する。
+**変更してはならない既存ファイル**(要件 9.5・10.5・7.3・スコープ外)と、それを実際に検査するタスク:
+
+| ファイル | 検査するタスク | 手段 |
+| ---- | ---- | ---- |
+| `src/weapon/combat_limits.gd` | 1.1 | 内容ハッシュ |
+| `src/stage/dev_stage.tscn` | 6.1 | 内容ハッシュ(要件 9.5) |
+| `src/player/player.tscn` | 6.4 | 内容ハッシュ |
+| `src/weapon/projectile.tscn` | 6.4 | 内容ハッシュ |
+| `src/weapon/projectile.gd` | 6.4 | 内容ハッシュ |
+| `project.godot` | 6.4 | レイヤ名 3 行の照合(要件 10.5。ファイル全体のハッシュは使わない — 理由はタスク 6.4 の実装の要点) |
+| `src/player/` の残り(`player.gd`・`player_stats.gd` 等) | 6.4 | 既存テストの通しの実行が緑のまま(内容ハッシュでは固定しない) |
+
+以前この節は「タスク 6.4 が内容ハッシュで確認する」と一括で述べていたが、6.4 の検証コマンドが実際にハッシュしていたのは `player.tscn` と `projectile.tscn` の 2 つだけで、`projectile.gd` と `project.godot` に対応する検査は存在しなかった。宣言と実体を上の表で一致させた。
 
 ### 分解時に埋めた仕様の空白(実装者への申し送り)
 
@@ -63,8 +75,8 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §6.1、§6.2、§6.3、§7 Requirement 7・8
     - 実装の要点(タスク固有):
       - 8.5 は `.tres` を読み込んで 10 項目 × 2 種を厳密比較する。値をテスト側に定数として持ち、実装から参照しない(unit #2 の申し送り「異常系のテストは実装の定数をテストから参照しない」と同じ理由で、値の退行を検出できるようにする)
-      - 8.7 は `.tres` が外部ファイルとして存在すること(`ResourceLoader.exists()`)と、`charger_enemy.tscn` / `shooter_enemy.tscn` が埋め込みサブリソースを持たないことで示す。シーン側の検証はタスク 2.3・5.3 で対象のシーンが揃ってから足してよい
-      - 8.2 は `load()` を 2 回行って同一インスタンスであること(`assert_object(a).is_same(b)`)と、`resource_local_to_scene` が偽であることで示す
+      - 8.7 のうち本サブタスクで示すのは `.tres` が外部ファイルとして存在すること(`ResourceLoader.exists()`)までとする。**シーン側(埋め込みサブリソースを持たないこと)はタスク 2.3・5.3 が担う**(対象のシーンが本サブタスクの時点で存在しないため)。8.7 は 1.1・2.3・5.3 の 3 タスクに割り当ててあり、本サブタスクの完了は 8.7 の充足を意味しない
+      - 8.2 は **`resource_local_to_scene` が偽であること**で示す。`load()` を 2 回行って同一インスタンスであること(`assert_object(a).is_same(b)`)は担保にならない — `ResourceLoader.load()` は既定でキャッシュを返すため、どう実装しても真になる(タスク 1.1 の実装中に実測。`## Implementation Notes` を参照)。実装済みの `enemy_stats_test.gd` は `resource_local_to_scene` のアサーションを持つため**手戻りは不要**であり、この要点の記述だけを実測に合わせて是正した
       - 8.6 は 2 つの `.tres` の値から算出する不等式で示す(射撃型は成立、突進型は弾を持たないため対象外)
       - 7.1・7.2 は `CombatLimits` の定数と 2 種の値を比較する。7.3 は `src/weapon/combat_limits.gd` を変更しないことであり、検証コマンドの内容ハッシュで示す(既存の `tests/weapon/combat_limits_test.gd` が値そのものを固定している)
     - 検証コマンド: `make test TESTS=res://tests/enemy`、`test "$(git hash-object src/weapon/combat_limits.gd)" = "34f2402a38e7a55fcd1f642216fa4a8d658e6d15" && echo OK`
@@ -99,7 +111,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `_ready()` を通す必要があるため、`Enemy.new()` を `add_child()` する(`add_child()` は同期で `_ready()` まで走り物理フレームは進まない。unit #2 の申し送り)。`auto_free()` と対にする
     - 検証コマンド: `make test TESTS=res://tests/enemy`
   - [ ] 2.3 `charger_enemy.tscn` の骨格(placeholder・衝突形状・レイヤ)と `Enemy` の物理(重力・接地・`move_and_slide()`)・標的の解決を実装する
-    _Requirements: 1.12, 1.14, 1.16, 1.17, 1.18, 1.19, 10.1_
+    _Requirements: 1.12, 1.14, 1.16, 1.17, 1.18, 1.19, 8.7, 10.1_
     _Boundary: Enemy_
     _Depends: 2.2_
     - 対象ファイル: `src/enemy/enemy.gd`(変更), `src/enemy/charger_enemy.gd`(新規), `src/enemy/charger_enemy.tscn`(新規), `tests/enemy/enemy_test.gd`(変更), `tests/enemy/charger_enemy_test.gd`(新規)
@@ -108,11 +120,12 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - この時点の `charger_enemy.gd` は `kind()` と `stats` の割り当てだけを持つ骨格でよい(`brain` はタスク 3.3 で足す。File Structure Plan の申し送りを参照)
       - 1.12 は `instantiate()` + `auto_free()` でシーンを読み、`ColorRect` の `size` と `CollisionShape2D` の `shape.size` がともに 16×16px、原点が矩形の中心にあること(`ColorRect` の `position` が `Vector2(-8, -8)`、`CollisionShape2D` の `position` が `Vector2.ZERO`)で検証する。ノード名は `player.tscn` に倣って `Placeholder` とする
       - 1.17 と 1.18 は分岐の両側である。接地側は `StaticBody2D`(layer 1)の床を置いて立たせる。非接地側は床を置かない
-      - 1.14 は `target` を `null` にした場合と、`queue_free()` 済みのノードを指した場合の 2 経路に個別のテストケースを割り当て、`assert_error(...).is_success()` で `push_error` が出ないことを見る
+      - 1.14 は 2 つの節から成り、本サブタスクが担うのは**前半節(`push_error` を出さない)だけ**である。`target` を `null` にした場合と、`queue_free()` 済みのノードを指した場合の 2 経路に個別のテストケースを割り当て、`assert_error(...).is_success()` で `push_error` が出ないことを見る。**後半節(標的までの距離を `INF` として扱う)はタスク 3.3 が担う** — この時点の `charger_enemy.gd` は `brain` を持たない骨格であり、距離が `Brain` へ渡る経路がまだ存在しないためである
+      - 8.7 のシーン側の節(既定値をシーンへ埋め込むサブリソースにしない)を `charger_enemy.tscn` について示す。`instantiate()` した `ChargerEnemy` の `stats.resource_path` が `res://src/enemy/charger_stats.tres` と厳密一致することでアサーションする(埋め込みサブリソースの `resource_path` は `res://src/enemy/charger_enemy.tscn::Resource_xxxx` の形になり、この比較で落ちる)。あわせて検証コマンドの `grep` で `[sub_resource type="Resource"]` が 0 件であることを見る(`CollisionShape2D` の `RectangleShape2D` は別型のため誤検出しない)。タスク 1.1 の `## Implementation Notes` が繰り延べを明記した部分がこれである
       - 1.16 は `target` が `@export` であること(`get_property_list()` の `PROPERTY_USAGE_EDITOR` ビット)と、代入した値が物理フレームを跨いで保たれること(内部で検索して上書きしないこと)で示す
       - 1.19 は `enemy.gd` の静的な検査で示す(`_physics_process` の中に `move_and_slide()` があり、速度の決定より後ろにあること)
       - 10.1 は `collision_layer` = 8、`collision_mask` = 1 の整数値を直接アサーションする(File Structure Plan の換算を参照)
-    - 検証コマンド: `make test TESTS=res://tests/enemy`、`grep -n 'move_and_slide' src/enemy/enemy.gd`(出現が `_physics_process` の中の 1 箇所だけであること)
+    - 検証コマンド: `make test TESTS=res://tests/enemy`、`grep -n 'move_and_slide' src/enemy/enemy.gd`(出現が `_physics_process` の中の 1 箇所だけであること)、`test "$(grep -c 'sub_resource type="Resource"' src/enemy/charger_enemy.tscn)" = 0 && echo OK`
   - [ ] 2.4 `Hurtbox` を実装して `charger_enemy.tscn` へ組み込み、プレイヤーの弾で被弾・撃破されることを検証する
     _Requirements: 1.13, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 10.2_
     _Boundary: Hurtbox_
@@ -127,7 +140,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 6.6 は主武器の弾 3 発ぶんの `take_damage(10)` を突進型の `.tres` の `max_hp` に対して与え、`defeated` の発火を見る。既定の `.tres` を使うためここでは値を差し替えない(要件 8.5 が値を固定している)
       - 1.13 は `Hurtbox` の `CollisionShape2D` の `shape.size` と `position` が本体のものと一致すること(はみ出さないこと)で検証する
       - 10.2 は `Hurtbox` の `collision_layer` = 8、`collision_mask` = 4 の整数値を直接アサーションする
-    - 検証コマンド: `make test TESTS=res://tests/enemy`、`grep -c 'queue_free' src/enemy/hurtbox.gd`(0 であること)
+    - 検証コマンド: `make test TESTS=res://tests/enemy`、`test "$(grep -c 'queue_free' src/enemy/hurtbox.gd)" = 0 && echo OK`
 
 - [ ] 3. 突進型(状態遷移 → 移動 → 攻撃判定)
 
@@ -156,16 +169,20 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 2.7 は `TELEGRAPH`・`CHARGE`・`RECOVER` の 3 状態それぞれについて、滞在中に距離を大きく振っても満了まで遷移しないことで示す
     - 検証コマンド: `make test TESTS=res://tests/enemy`
   - [ ] 3.3 `ChargerEnemy` に `brain` を持たせ、状態を水平の速度へ写す
-    _Requirements: 1.15, 1.21, 1.22, 3.1, 3.2, 3.3, 3.4_
+    _Requirements: 1.14, 1.15, 1.21, 1.22, 3.1, 3.2, 3.3, 3.4_
     _Boundary: ChargerEnemy_
     _Depends: 2.4, 3.2_
     - 対象ファイル: `src/enemy/charger_enemy.gd`(変更), `tests/enemy/charger_enemy_test.gd`(変更)
-    - 仕様参照: spec.md §5.2、§5.4「ロジックの所在」、§7 Requirement 3.1〜3.4・1.15・1.21・1.22
+    - 仕様参照: spec.md §5.2、§5.4「ロジックの所在」、§5.1「標的が不在のフレーム」、§7 Requirement 3.1〜3.4・1.14・1.15・1.21・1.22
     - 実装の要点(タスク固有):
       - 3.1 と 3.2 は `IDLE` における `detect_range` の分岐の両側であり、個別のテストケースを割り当てる。接近の向き(標的が左/右)も両側を見る
       - 3.4 は「突進を始めた時点の向きを保つ」ことである。`CHARGE` の途中で標的を反対側へ動かし、速度の符号が変わらないことで示す
       - 1.15 は `IDLE` で `target` を `null` にした場合であり、`state` が `IDLE` のまま・水平の速度が 0 であることを見る。`TELEGRAPH` 以降で失った場合(2.7・2.11)と混同しない
+      - **1.14 の後半節(標的までの距離を `INF` として扱う)を本サブタスクで固定する**(前半節の `push_error` はタスク 2.3 が担う)。`target` を突進の到達距離(`attack_speed * attack_duration` = 90px)の内側に置いて `TELEGRAPH` へ入れ、満了より前に `target` を失わせ、満了フレームで `brain.state` が `RECOVER`(`CHARGE` ではない)になることを見る。**`null` にする経路と `queue_free()` 済みにする経路の 2 つに個別のテストケースを割り当てる**
+      - この形を取る理由は、`INF` を巨大な有限値(例 `1e9`)へ置き換える実装を落とすためである。有限値だと 2.4 の分岐(距離が有限 → `CHARGE`)へ進み、`RECOVER` のアサーションが落ちる。タスク 2.3 の「`push_error` が出ない」だけでは有限値の実装が素通りする。射撃型では同じ変異を捕らえられない(4.11 により `TELEGRAPH` は距離によらず完走し、`COOLDOWN` へ移る点が `INF` でも有限値でも変わらないため)。突進型のこのケースが `INF` を要求する唯一の観測点である
+      - 解放済みの経路は、`queue_free()` の反映を待ってから(`is_instance_valid()` が偽になったことを確認してから)満了させる。待たずに進めると `null` 経路と区別がつかない
       - 1.21 は `target` に位置を制御できるスタブ(`Node2D`)を注入し、規定のフレーム数を過ぎたら索敵範囲の外へ動かして移動を打ち切る形で検証する(spec.md §7 Requirement 1 の「検証の形式」)。期待値は `速度 / Engine.physics_ticks_per_second * フレーム数` で算出し、実数を直書きしない。消化フレーム数も併せてアサーションする
+      - **1.21 の初期配置は突進の到達距離(90px)より外・`detect_range`(128px)より内に取る**。到達距離の内側に置くと `IDLE` から即座に `TELEGRAPH` へ入って水平の速度が 0 になり(3.3)、移動そのものが起きない。索敵範囲の外に置くと 3.2 で停止する。`IDLE` のまま水平に動く状態はこの帯だけである
       - 注入するスタブはスイートのメンバに抱える(`Callable` / ノードの参照が切れて毎フレーム null 参照のエラーが出る事故を避ける。unit #2 の申し送り)
       - 1.22 は `brain` が外から読める公開点であることの検証であり、射撃型でも同じ形で見る(タスク 5.3)
     - 検証コマンド: `make test TESTS=res://tests/enemy`
@@ -252,18 +269,19 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 実装の要点: ガードは関数の先頭に置く。`delta` と `distance_to_target` それぞれに個別のテストケースを割り当て、`push_error`・戻り値が偽であること・`state` が変わらないことを見る。`INF` は正常な入力であり弾かない(4.13 の経路)
     - 検証コマンド: `make test TESTS=res://tests/enemy`
   - [ ] 5.3 `ShooterEnemy` と `shooter_enemy.tscn` を作り、敵弾の生成と発射を実装する
-    _Requirements: 1.11, 1.22, 4.7, 4.8, 4.14, 9.10_
+    _Requirements: 1.11, 1.22, 4.7, 4.8, 4.14, 8.7, 9.10_
     _Boundary: ShooterEnemy_
     _Depends: 2.4, 4.3, 5.2_
     - 対象ファイル: `src/enemy/shooter_enemy.gd`(新規), `src/enemy/shooter_enemy.tscn`(新規), `tests/enemy/shooter_enemy_test.gd`(新規), `tests/enemy/enemy_test.gd`(変更)
-    - 仕様参照: spec.md §5.3、§7 Requirement 4.7・4.8・4.14・1.11・1.22・9.10
+    - 仕様参照: spec.md §5.3、§6.1「既定値の実体」、§7 Requirement 4.7・4.8・4.14・1.11・1.22・8.7・9.10
     - 実装の要点(タスク固有):
       - `shooter_enemy.tscn` は `charger_enemy.tscn` と同じ placeholder・衝突形状・`Hurtbox` を持ち、`Attackbox` は持たない。`stats` に `shooter_stats.tres`、`projectile_scene` に `enemy_projectile.tscn` を設定する(9.10)
       - 4.7 は生成先の子ノード数の増分と、生成された `EnemyProjectile` に渡った向き・速さ・ダメージ・射程の 4 つで検証する。値は `stats` から読み、実装へ直書きしない。向きは標的への単位ベクトルであり、**斜めの配置**のケースを含める
       - 4.14 は「親へ追加し、位置を決めてから `launch()` を呼ぶ」順序の要求である。敵自身を親のあるノードの下に置き、生成された弾の親と `launch()` 時点の位置(射程の基準)の両方を見る
       - 4.8 は射撃型が水平に動かないことであり、標的を索敵範囲の内外に置いた両方で位置の x が変わらないことを見る
       - 1.11 は 2 種の `kind()` を並べて検証する(突進型は既に存在する)。1.22 は `brain` の公開点であり、突進型(タスク 3.3)と同じ形で見る
-    - 検証コマンド: `make test TESTS=res://tests/enemy`
+      - 8.7 のシーン側の節を `shooter_enemy.tscn` について示す(タスク 2.3 が `charger_enemy.tscn` に対して行うのと同じ形)。`instantiate()` した `ShooterEnemy` の `stats.resource_path` が `res://src/enemy/shooter_stats.tres` と厳密一致することでアサーションし、検証コマンドの `grep` で `[sub_resource type="Resource"]` が 0 件であることを見る。これで 8.7 は 1.1(`.tres` の実在)・2.3・5.3(2 つのシーンの非埋め込み)で閉じる
+    - 検証コマンド: `make test TESTS=res://tests/enemy`、`test "$(grep -c 'sub_resource type="Resource"' src/enemy/shooter_enemy.tscn)" = 0 && echo OK`
   - [ ] 5.4 発射の異常系(`projectile_scene` の未設定・標的の不在)を実装する
     _Requirements: 4.9, 4.13_
     _Boundary: ShooterEnemy_
@@ -292,8 +310,8 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 9.5 と 9.6 は「しないこと」の要求である。9.5 は検証コマンドの内容ハッシュ、9.6 はシーンの全ノードを再帰的に走査してスポナーに相当するノード・スクリプト変数が無いことで示す
       - 9.7 は `ProjectSettings.get_setting("application/run/main_scene")` が `res://main.tscn` のままであることで示す(期待値はテスト側に定数として持つ)
       - 9.9 は各敵の `target` が `Player` ノードを指していることを、ツリーへ載せずに読んで検証する
-      - 9.11 は File Structure Plan の全ファイルが規約どおりのパスに存在することであり、検証コマンドの存在確認で示す
-    - 検証コマンド: `make test TESTS=res://tests/stage`、`test "$(git hash-object src/stage/dev_stage.tscn)" = "8c8d95cdce4d0e0ba78ab942db1c75d27651680e" && echo OK`、`ng=0; for f in src/enemy/enemy_stats.gd src/enemy/enemy_state.gd src/enemy/enemy_kind.gd src/enemy/enemy.gd src/enemy/charger_brain.gd src/enemy/charger_enemy.gd src/enemy/charger_enemy.tscn src/enemy/shooter_brain.gd src/enemy/shooter_enemy.gd src/enemy/shooter_enemy.tscn src/enemy/hurtbox.gd src/enemy/hurtbox.tscn src/enemy/attackbox.gd src/enemy/charger_stats.tres src/enemy/shooter_stats.tres src/weapon/enemy_projectile.gd src/weapon/enemy_projectile.tscn src/stage/enemy_dev_stage.gd src/stage/enemy_dev_stage.tscn; do test -f "$f" || { echo "NG: $f"; ng=1; }; done; test $ng -eq 0 && echo OK`
+      - 9.11 は spec.md §6.5 の**実装の配置**と `docs/testing.md` の**テストの配置**の両方を求める。検証コマンドの存在確認に `src/` 配下 19 ファイルだけでなく **`tests/` 配下 9 ファイル**(`tests/enemy/` 7 本・`tests/weapon/` 1 本・`tests/stage/` 1 本)も並べる。実装の側だけを見ると「テストの配置規約に従う」半分が未検査のまま通る
+    - 検証コマンド: `make test TESTS=res://tests/stage`、`test "$(git hash-object src/stage/dev_stage.tscn)" = "8c8d95cdce4d0e0ba78ab942db1c75d27651680e" && echo OK`、`ng=0; for f in src/enemy/enemy_stats.gd src/enemy/enemy_state.gd src/enemy/enemy_kind.gd src/enemy/enemy.gd src/enemy/charger_brain.gd src/enemy/charger_enemy.gd src/enemy/charger_enemy.tscn src/enemy/shooter_brain.gd src/enemy/shooter_enemy.gd src/enemy/shooter_enemy.tscn src/enemy/hurtbox.gd src/enemy/hurtbox.tscn src/enemy/attackbox.gd src/enemy/charger_stats.tres src/enemy/shooter_stats.tres src/weapon/enemy_projectile.gd src/weapon/enemy_projectile.tscn src/stage/enemy_dev_stage.gd src/stage/enemy_dev_stage.tscn tests/enemy/enemy_stats_test.gd tests/enemy/enemy_test.gd tests/enemy/hurtbox_test.gd tests/enemy/charger_brain_test.gd tests/enemy/charger_enemy_test.gd tests/enemy/shooter_brain_test.gd tests/enemy/shooter_enemy_test.gd tests/weapon/enemy_projectile_test.gd tests/stage/enemy_dev_stage_test.gd; do test -f "$f" || { echo "NG: $f"; ng=1; }; done; test $ng -eq 0 && echo OK`
   - [ ] 6.2 リトライ(`died` からのシーン再読込)を実行時に目視で確認する(自動テストでは検証しない)
     _Requirements: 9.3_
     _Boundary: EnemyDevStage_
@@ -318,11 +336,20 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §6.1「既定値の実体」、§8「純ロジックと配線を分ける」、§7 Requirement 8.1・1.20・10.5
     - 実装の要点(タスク固有):
       - 本サブタスクの境界は「数値の集約」という横断的な関心であり、対象は `src/` 配下の実装コード全体に及ぶ。検査対象は `EnemyStats` の既定値のうち**小数のリテラル**とし、整数(30 / 20 / 15 / 10)は無関係な整数と衝突して誤検出が多いため grep から外す(unit #2 と同じ判断。整数は要件 4.7・3.6・6.6 のテストが「値が `stats` 経由で流れること」で担保する)
+      - **検査する値を tasks.md へ列挙しない**。検証コマンドは 2 つの `.tres`(spec.md §6.1 が「既定値の実体」と定める置き場所)から小数の値を抽出して grep のパターンを組み立てる。値を tasks.md に複製すると、spec.md §6.1 と `.tres` の値が改訂されたとき検査だけが古い値を見続け、**新しい値の直書きを素通りさせる**方向に壊れる(検査が緑のまま無力化するため、壊れたことに気付けない)。抽出が 0 件になった場合は `NG` を出して落とす(パターンが空になると grep が全行に一致し、逆に常時 `NG` になるため)
+      - `0.0` を抽出から外すのは、それが「その振る舞いを持たない」ことを表す標識であり(spec.md §6.1 の不変条件)、手触りの数値ではないためである。`0.0` は初期化・ゼロ比較として実装コードのあらゆる箇所に現れ、誤検出が検査の意味を失わせる。整数を外すのと同じ理由による
       - `enemy_stats.gd`・`combat_limits.gd`・`player_stats.gd` は検査から除外する(値の定義そのもの、および unit #2 の集約先)。`.tres` は grep の対象外(`--include='*.gd'`)であり、値の実体として正しい置き場所である
       - 無関係な小数リテラルが偶然一致した場合は、その旨と根拠を `## Implementation Notes` に記録してから除外する(判定を黙って緩めない)
       - 1.20 は `move_and_slide()` が 2 つの `*_brain.gd` に現れないことと、`src/enemy/` 全体で `enemy.gd` の `_physics_process` の 1 箇所だけであることで示す
-      - 10.5 は unit #2 が定めたレイヤ 1〜3 の割り当てを変えないことであり、`project.godot` のレイヤ名 5 行と `player.tscn`・`projectile.tscn` の内容ハッシュで示す。最後に全テストを通しで実行し、統計行の `skipped` と `orphans` が 0 であることを確かめる
-    - 検証コマンド: `grep -rnE '(^|[^0-9.])(600\.0|40\.0|128\.0|160\.0|0\.4|150\.0|120\.0|0\.6|0\.8|1\.5|216\.0)([^0-9]|$)' --include='*.gd' src > /tmp/enemy_hardcoded.txt; grep -vE '^src/(enemy/enemy_stats|weapon/combat_limits|player/player_stats)\.gd:' /tmp/enemy_hardcoded.txt > /tmp/enemy_hardcoded2.txt; test ! -s /tmp/enemy_hardcoded2.txt && echo OK || cat /tmp/enemy_hardcoded2.txt`、`grep -n 'move_and_slide' src/enemy/*.gd`(`enemy.gd` の 1 箇所だけであること)、`test "$(git hash-object src/player/player.tscn)" = "fe63929182dae747175248c211e7174294959a27" && test "$(git hash-object src/weapon/projectile.tscn)" = "df9e5f40471d007eedd282e7b5d9513444094acd" && echo OK`、`make test > /tmp/alltests.txt 2>&1; rc=$?; grep -E 'skipped|orphans' /tmp/alltests.txt; test $rc -eq 0 && echo OK`
+      - **10.5 は `project.godot` のレイヤ名を直接照合する**。要件が凍結するのはレイヤ 1〜3 の割り当てであり、`2d_physics/layer_1="terrain"`・`layer_2="player"`・`layer_3="player_projectile"` の 3 行が原文のまま実在することを検証コマンドで示す(レイヤ 4・5 は本単位が使う行であり 10.5 の対象外)。**期待値はこのタスクが持ち、`project.godot` から読み直さない**(読み直すと変更後の値と比較して常に一致する)。ファイル全体の内容ハッシュを使わないのは、Godot が無関係な設定行を書き戻したときに 10.5 と無関係な失敗を出すためである
+      - あわせて `player.tscn`・`projectile.tscn`・`projectile.gd` の内容ハッシュを照合する(File Structure Plan の「変更してはならない既存ファイル」のうち、他のタスクが照合していないもの)。最後に全テストを通しで実行し、統計行の `skipped` と `orphans` が 0 であることを確かめる
+    - 検証コマンド:
+      - 数値の直書き(8.1。パターンを `.tres` から導出する): `vals=$(grep -hoE '^[a-z_]+ = [0-9]+\.[0-9]+$' src/enemy/charger_stats.tres src/enemy/shooter_stats.tres | grep -oE '[0-9]+\.[0-9]+$' | grep -vx '0.0' | sort -u); if [ -z "$vals" ]; then echo "NG: .tres から小数の既定値を抽出できない"; else pat=$(printf '%s\n' "$vals" | sed 's/\./\\./g' | paste -sd '|' -); grep -rnE "(^|[^0-9.])($pat)([^0-9]|$)" --include='*.gd' src | grep -vE '^src/(enemy/enemy_stats|weapon/combat_limits|player/player_stats)\.gd:' > /tmp/enemy_hardcoded.txt; test ! -s /tmp/enemy_hardcoded.txt && echo OK || cat /tmp/enemy_hardcoded.txt; fi`
+      - 純ロジックの分離(1.20): `grep -n 'move_and_slide' src/enemy/*.gd`(`enemy.gd` の 1 箇所だけであること)
+      - レイヤ 1〜3 の割り当て(10.5): `grep -qx '2d_physics/layer_1="terrain"' project.godot && grep -qx '2d_physics/layer_2="player"' project.godot && grep -qx '2d_physics/layer_3="player_projectile"' project.godot && echo OK`
+      - 凍結済みファイルの内容ハッシュ(10.5・9.5 の周辺): `test "$(git hash-object src/player/player.tscn)" = "fe63929182dae747175248c211e7174294959a27" && test "$(git hash-object src/weapon/projectile.tscn)" = "df9e5f40471d007eedd282e7b5d9513444094acd" && test "$(git hash-object src/weapon/projectile.gd)" = "30bee3344b85b08e26187e5ca028f0a71972da0a" && echo OK`
+      - `.tres` の行の欠落(上のパターン導出が縮退していないこと): `n=$(grep -cE '^@export var ' src/enemy/enemy_stats.gd); ng=0; for t in charger_stats shooter_stats; do m=$(grep -cE '^[a-z_]+ = [0-9-]' src/enemy/$t.tres); test "$m" = "$n" || { echo "NG: $t.tres の値 $m 行が enemy_stats.gd の項目 $n 個と一致しない"; ng=1; }; done; test $ng -eq 0 && echo OK`
+      - 通しの実行(`skipped` と `orphans` が 0 であることまで機械判定する): `make test > /tmp/alltests.txt 2>&1; rc=$?; s=$(grep -oE '[0-9]+ skipped' /tmp/alltests.txt | tail -1 | grep -oE '^[0-9]+'); o=$(grep -oE '[0-9]+ orphans' /tmp/alltests.txt | tail -1 | grep -oE '^[0-9]+'); echo "rc=$rc skipped=$s orphans=$o"; test "$rc" -eq 0 && test "$s" = 0 && test "$o" = 0 && echo OK`
 
 ## Implementation Notes
 
