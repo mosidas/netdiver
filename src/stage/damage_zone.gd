@@ -14,6 +14,10 @@ const TAKE_DAMAGE_METHOD: StringName = &"take_damage"
 # 触れている body ごとの、最後にダメージを与えてからの経過時間
 var _elapsed: Dictionary = {}
 
+# 領域を出た body ごとの、最後にダメージを与えてからの経過時間。周期が満ちるまで残す。
+# 出入りを繰り返しても周期より速くダメージが入らないようにするために持つ
+var _cooling: Dictionary = {}
+
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
@@ -21,7 +25,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	# keys() は複製を返すため、走査の途中で _elapsed から取り除いてよい
+	# keys() は複製を返すため、走査の途中で辞書から取り除いてよい
 	for body: Node in _elapsed.keys():
 		if not is_instance_valid(body):
 			_elapsed.erase(body)
@@ -34,10 +38,28 @@ func _physics_process(delta: float) -> void:
 			body.call(TAKE_DAMAGE_METHOD, damage)
 		_elapsed[body] = elapsed
 
+	for body: Node in _cooling.keys():
+		if not is_instance_valid(body):
+			_cooling.erase(body)
+			continue
 
-# 触れた瞬間に 1 回目を与える。周期の起点を接触に置くことで、領域に入った手応えが即座に出る
+		var cooling: float = float(_cooling[body]) + delta
+		# 周期が満ちたら忘れる: 次に触れたときは初めての接触と同じ扱いになる
+		if cooling >= DAMAGE_INTERVAL:
+			_cooling.erase(body)
+		else:
+			_cooling[body] = cooling
+
+
+# 触れた瞬間に 1 回目を与える。周期の起点を接触に置くことで、領域に入った手応えが即座に出る。
+# ただし前の接触から周期が満ちていない再進入では与えない(残りの周期を引き継ぐ)
 func _on_body_entered(body: Node2D) -> void:
 	if not body.has_method(TAKE_DAMAGE_METHOD):
+		return
+
+	if _cooling.has(body):
+		_elapsed[body] = _cooling[body]
+		_cooling.erase(body)
 		return
 
 	_elapsed[body] = 0.0
@@ -45,4 +67,9 @@ func _on_body_entered(body: Node2D) -> void:
 
 
 func _on_body_exited(body: Node2D) -> void:
+	if not _elapsed.has(body):
+		return
+
+	# 領域の外では周期を進めるだけでダメージは与えない
+	_cooling[body] = _elapsed[body]
 	_elapsed.erase(body)

@@ -125,6 +125,23 @@ func test_a_player_outside_the_zone_keeps_its_health() -> void:
 	assert_int(player.health.current).is_equal(MAX_HEALTH)
 
 
+# 出入りを 2 往復しても、周期の 1.0 秒が満ちるまでは接触の 1 回だけで止まること。
+# 待ちの合計 600ms は周期より短く取る: 周期が満ちて 2 回目が入る余地を残さない
+func test_re_entering_the_zone_keeps_the_damage_interval() -> void:
+	var built: Array = _build_stage(PLAYER_START)
+	var zone: DamageZone = built[0]
+	var player: Player = built[1]
+
+	await await_millis(200)
+	for _i: int in 2:
+		zone.position = AWAY_POSITION
+		await await_millis(100)
+		zone.position = ZONE_POSITION
+		await await_millis(100)
+
+	assert_int(player.health.current).is_equal(MAX_HEALTH - DAMAGE)
+
+
 func test_leaving_the_zone_stops_the_damage() -> void:
 	var built: Array = _build_stage(PLAYER_START)
 	var zone: DamageZone = built[0]
