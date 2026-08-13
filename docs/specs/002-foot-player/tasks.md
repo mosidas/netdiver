@@ -221,7 +221,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 検証コマンド: `make test TESTS=res://tests/player`
 
 - [ ] 7. 仮ステージ
-  - [ ] 7.1 `dev_stage.tscn` を新規作成し、床・段差 3 段・壁 2 を `StaticBody2D` と `CollisionShape2D` で構成する
+  - [x] 7.1 `dev_stage.tscn` を新規作成し、床・段差 3 段・壁 2 を `StaticBody2D` と `CollisionShape2D` で構成する
     _Requirements: 9.1, 9.2, 9.4, 9.5, 9.6_
     _Boundary: DevStage_
     _Depends: 1.3_
@@ -365,4 +365,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`health.tick(delta)` は `delta <= 0.0` のガードより後ろに置く**(タスク 6.3)。前に置く変異は「体力が変わらない」だけを見るテストでは素通りする: 負の delta で `Health` の端数 `_regen_remainder` が負に汚れても、`floori(負) <= 0` で早期 return するため `current` が動かない。**拒否した delta の影響は「その後の正常な delta での回復量」で見ること**(タスク 6.2 の「待機の計測が戻らないことも見る」と同じ形)。
 - **変異で検証した**(タスク 6.3、`tests/player` 105 ケースに対して実測): `Health.new()` へ既定値(100 / 3.0 / 20.0)を直書き → 11 件失敗、`health.tick(delta)` の呼び出しを削除 → 1 件失敗、`died.emit()` を削除 → 2 件失敗、`tick` を `delta` ガードより前へ移動 → 2 件失敗。しきい値の跨ぎは、待機を設定 0.5 / 既定 3.0 に対して経過 1.0 秒で判定し、回復量を設定 8.0 / 既定 20.0 に対して 8 フレーム(4 点 / 10 点)で判定して作った。
 - **`Player.died` の発火回数も `Array` へ控えて数える**(タスク 6.3)。`Player` は `Object` なので `assert_signal` を使えるが、`is_not_emitted()` は引数まで一致したときだけ発火と見なす落とし穴があり(タスク 5.3 の申し送り)、「ちょうど 1 回」の厳密比較には `Array` のほうが素直である。`Health`(`RefCounted`)側と形も揃う。
+- **`dev_stage.tscn` の座標(タスク 7.1、spec が定めていない決定)**: 基準解像度 320×180 の中へ収めた。床は `position = (160, 100)`・320×16px(上面 y=92)、段差は `Step1` (180, 76)・`Step2` (228, 52)・`Step3` (276, 28) の 48×16px で**隣り合う段の差は 24px**(上限 32px に対して余裕 8px)、壁は `WallLeft` (8, 38)・`WallRight` (312, 38) の 16×108px、`Player` は (48, 60) で床の上に落ちる。**タスク 7.2 の `DamageZone` は床の上面 y=92 より上、壁の内側(x は 16〜304)へ置くこと。**
+- **地形にも placeholder の `ColorRect` を付けた**(タスク 7.1、spec §5.7 は `StaticBody2D` + `CollisionShape2D` しか書いていない)。タスク 7.4 の目視確認(プレイヤーの位置が初期位置へ戻ること)は、地形が見えないと成立しないため。`player.tscn` と同じ `Placeholder` という名前・原点中心のオフセットに揃えている。
+- **`StaticBody2D` の `collision_mask` は既定(1)のままにした**(タスク 7.1)。spec §6.5 は地形の layer しか定めておらず、静的な地形は自分から何も検出しないため mask は振る舞いに効かない。**テストは `collision_layer` だけを固定している。**
+- **シーンの構成を検証するテストはツリーへ載せない**(タスク 7.1)。`DEV_STAGE_SCENE.instantiate()` + `auto_free()` だけで `position`・`collision_layer`・子ノードの型を読める。`add_child()` すると `Player._ready()` と `_physics_process` が走って位置が変わるため、初期位置を検証するテストが壊れる。
+- **`run/main_scene` の検証は `ProjectSettings.get_setting("application/run/main_scene")` で行う**(タスク 7.1)。tasks.md の検証コマンドは `project.godot` への `grep` だが、テストからは設定値そのものを読むほうが直接的である(grep は commit 前の補助として併走させている)。期待値 `res://main.tscn` はテスト側に定数として持ち、実装から参照しない。
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
