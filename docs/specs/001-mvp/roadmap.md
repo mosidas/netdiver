@@ -1,6 +1,6 @@
 # netdiver MVP roadmap
 
-企画書「9. MVP(最初に完成させる最小範囲)」の範囲を、7 つの作業単位(unit)へ分解した一覧である。各 unit は `docs/specs/NNN-<unit>/` を workdir とし、仕様 → タスク分解 → 実装の順に駆動する。`NNN` は unit の開始時にエンジンが採番する 3 桁の連番である。
+企画書「9. MVP(最初に完成させる最小範囲)」の範囲を、7 つの作業単位(unit)へ分解した一覧である。各 unit は `docs/specs/001-mvp/NNN-<unit>/` を workdir とし、仕様 → タスク分解 → 実装の順に駆動する。`NNN` は unit の開始時にエンジンが採番する 3 桁の連番で、この roadmap のディレクトリ直下で閉じる。
 
 企画書の本体は workspace リポジトリの `4_artifacts/netdiver/issues/01_game-design-doc/game-design-doc.md` にある。本書は企画書の内容を再記述せず、章番号で参照する。作業記録は workspace の `1_issues/netdiver/007-mvp-core-loop/` に置く。
 
@@ -94,6 +94,23 @@
 | サウンド(BGM・効果音)                         | 企画書 11. に方向性はあるが、コアループの成立を確認するのに必要ない。ドット絵と同じく後続の作業で制作する |
 | GDExtension による実装                         | 企画書 12. で「処理速度が問題になった箇所だけ」と定めている。MVP は型注釈付き GDScript に限る            |
 
-## 4. この文書の扱い
+## 4. 凍結済み unit の相互参照の読み替え
 
-全 unit の完了時に本書は役目を終える。未確定・スコープ外のうち以後も参照する必要がある項目は、恒久情報の配置規約(`.claude/skills/dev-core/references/durable-info.md`)に従って ADR・README へ移す。
+`001-test-harness` と `002-foot-player` は、workdir が `docs/specs/` 直下にあった時期に凍結された。その `spec.md`・`tasks.md` は当時のパスで相互参照しており、次のように読み替える。
+
+| 文書中の表記 | 実際の位置 |
+| :- | :- |
+| `docs/specs/roadmap.md` | `docs/specs/001-mvp/roadmap.md`(本書) |
+| `docs/specs/<NNN-unit>/` | `docs/specs/001-mvp/<NNN-unit>/` |
+
+凍結済みの中間生成物は変更しないため(`.claude/skills/dev-core/references/principles.md` 1.)、移動に伴うパスの更新も行わない。ディレクトリ名は変えていないため、上の読み替えで一意に解決する。
+
+## 5. この文書の扱い
+
+本書は同じディレクトリの `state.json` が状態を持つ中間生成物である。全 unit が `completed` に達したら、次の順で扱いを終える(順序を入れ替えない)。
+
+1. 未確定・スコープ外のうち以後も参照する必要がある項目を、恒久情報の配置規約(`.claude/skills/dev-core/references/durable-info.md`)に従って ADR・README へ移す。
+2. 移動に伴う本書の編集を終える。
+3. 状態を `frozen` へ進める。以後は参照専用になり、変更は `check.py` が凍結違反として検出する。
+
+凍結前に未確定の項目を unit 一覧へ移す場合は、`roadmap-approved → roadmap-generated` へ差し戻してから編集し、再承認する。手順の正本は `.claude/skills/flow-sdd/SKILL.md` 2.1 にある。
