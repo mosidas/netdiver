@@ -105,3 +105,5 @@ position = Vector2(112, 76)
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
 position = Vector2(48, 60)
+
+[connection signal="died" from="Player" to="." method="_on_player_died"]

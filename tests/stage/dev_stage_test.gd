@@ -118,6 +118,39 @@ func test_the_player_starts_above_the_floor_and_inside_the_walls() -> void:
 	assert_float(player.global_position.x).is_less(right_wall.global_position.x)
 
 
+func test_the_player_death_is_wired_to_the_stage() -> void:
+	var stage := _instantiate_stage()
+	var player: Player = stage.get_node(NodePath(PLAYER_NAME))
+
+	var connections: Array = player.get_signal_connection_list(&"died")
+	assert_int(connections.size()).is_equal(1)
+
+	var callable: Callable = connections[0]["callable"]
+	assert_object(callable.get_object()).is_same(stage)
+
+
+func test_the_stage_holds_no_resume_position() -> void:
+	var stage := _instantiate_stage()
+
+	for property: Dictionary in stage.get_property_list():
+		var usage: int = property["usage"]
+		if usage & PROPERTY_USAGE_SCRIPT_VARIABLE == 0:
+			continue
+		# スクリプトが持つ変数はゼロ件であること。再開位置は変数としても持たない
+		assert_str(str(property["name"])).append_failure_message(
+			"DevStage が状態を持っている: %s" % property["name"]
+		).is_empty()
+
+	# 再開位置を表す Marker2D・Node2D を子として持たないこと。地形・領域・自機だけで閉じる
+	var allowed: Array[String] = [FLOOR_NAME, PLAYER_NAME, "DamageZone"]
+	allowed.append_array(STEP_NAMES)
+	allowed.append_array(WALL_NAMES)
+	for child: Node in stage.get_children():
+		assert_array(allowed).append_failure_message(
+			"想定外の子ノード: %s" % child.name
+		).contains([str(child.name)])
+
+
 func test_the_main_scene_setting_is_left_untouched() -> void:
 	var main_scene: String = str(ProjectSettings.get_setting("application/run/main_scene"))
 

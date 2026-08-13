@@ -244,7 +244,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - **テストでは `Player` を接地させる**。`Player._physics_process` は毎フレーム重力を加えるため、床が無いと 1.5 秒で約 675px 落下して領域から抜け、実装が正しくても 2 回目のダメージが入らない。`StaticBody2D`(`collision_layer` = 1)の床を領域の内側に置き、その上に `Player` を立たせる
       - テストは `Player` と `DamageZone` を重ねてツリーへ載せ、`await await_millis(1500)` の後に体力が `damage` の 2 回分だけ減っていることで検証する(周期の境界 0.0 秒と 1.0 秒の中間で判定し、次の 2.0 秒との間に 0.5 秒の余裕を取る)。`regen_delay` は 3.0 秒であり、この待ちの間に自動回復は始まらない
     - 検証コマンド: `make test TESTS=res://tests/stage`
-  - [ ] 7.3 `player.died` を `DevStage` の再読込の処理へ接続する。再開位置を切り替える状態を持たない
+  - [x] 7.3 `player.died` を `DevStage` の再読込の処理へ接続する。再開位置を切り替える状態を持たない
     _Requirements: 7.1, 7.3_
     _Boundary: DevStage_
     _Depends: 7.2_
@@ -375,4 +375,6 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **周期の剰余は繰り越す**(タスク 7.2)。`while elapsed >= DAMAGE_INTERVAL` で減算するため、1 フレームが周期より長い環境でも与える回数が減らない。`body_exited` で `_elapsed` から取り除くので、出入りのたびに周期は接触からやり直しになる。
 - **「領域の外」は真上に取らない**(タスク 7.2、テストが 1 度落ちた)。プレイヤーは足場が無いと落下するため、領域の真上へ置くと落下の途中で通り抜けて `body_entered` が発火する。**横へずらして床の上に立たせること**(実装は `OUTSIDE_POSITION = (80, -40)`、領域は x が -32〜32)。離脱の検証は逆に領域側を遠くへ動かしている。
 - **`dev_stage.tscn` の `DamageZone` は `position = (112, 76)`**(タスク 7.2)。64×32px なので x が 80〜144、y が 60〜92 を覆い、床の上面(y=92)に接する。プレイヤーの開始位置 (48, 60) からは右へ歩くと入る。**タスク 7.4 の目視確認はこの位置に留まって体力を 0 にする。**
+- **`died` の接続は `dev_stage.tscn` の `[connection]` で行い、`_ready()` では繋がない**(タスク 7.3、spec が定めていない決定)。シーンの宣言に置くと `instantiate()` した時点で接続が存在し、テストがツリーへ載せずに `get_signal_connection_list("died")` を読める。`_ready()` で繋ぐと `add_child()` が要り、`Player._physics_process` が走って初期位置を検証する別のテストと干渉する。
+- **`DevStage` はスクリプト変数を 1 つも持たない**(タスク 7.3)。テストは `get_property_list()` の `PROPERTY_USAGE_SCRIPT_VARIABLE` が 0 件であることと、子ノードが地形 6・`DamageZone`・`Player` の許可リストに収まることの 2 つで再開位置の不在を示している。**`DevStage` に変数や子ノードを足すとこのテストが落ちる**(意図した追加なら許可リストを更新すること)。
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
