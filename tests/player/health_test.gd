@@ -18,6 +18,12 @@ const FRAMES_UNDER_DELAY: int = 7
 
 const DAMAGE: int = 20
 const DAMAGED_CURRENT: int = 20
+# 被弾を拒む値。0 だけだと「引いた結果が同じ」で素通りするため負値を混ぜる
+const INVALID_AMOUNTS: Array[int] = [0, -1, -DAMAGE]
+# 実装の定数は参照しない: 参照するとアサーションが自明化し、文言の退行を検出できない
+const INVALID_AMOUNT_ERROR_FORMAT: String = (
+	"Health.take_damage(): amount は正でなければならない(現在値: %s)。状態を変えずに返る"
+)
 
 # _init() の引数が使われていることを見るための対の値。既定の PlayerStats とも異なる
 const LONG_REGEN_DELAY: float = 1.0
@@ -34,6 +40,7 @@ const FULL: String = "full"
 const WAITING: String = "waiting"
 const REGENERATING: String = "regenerating"
 const NEAR_MAX: String = "near_max"
+const DEPLETED: String = "depleted"
 
 # 到達できる状態 × delta の総当たり。待機と回復の分岐を広げる変異・上限の強制を外す変異が
 # 片側だけの検証では素通りするため、出力を厳密比較の表で押さえる。
@@ -51,6 +58,9 @@ const TICK_TABLE: Array = [
 	[NEAR_MAX, FRAME_DELTA, [39, false]],
 	[NEAR_MAX, BIG_DELTA, [40, false]],
 	[NEAR_MAX, REGEN_DELAY, [40, false]],
+	[DEPLETED, FRAME_DELTA, [0, true]],
+	[DEPLETED, BIG_DELTA, [0, true]],
+	[DEPLETED, REGEN_DELAY, [0, true]],
 ]
 
 
@@ -76,7 +86,17 @@ func _health_in_state(state: String) -> Health:
 		NEAR_MAX:
 			health.take_damage(1)
 			health.tick(REGEN_DELAY)
+		DEPLETED:
+			health.take_damage(MAX_VALUE)
 	return health
+
+
+## `depleted` の発火を控える配列を返す。Array は参照として捕捉されるため、
+## 値コピーで捕捉される lambda のローカル変数と違い外側から回数を読める
+func _record_depleted(health: Health) -> Array[bool]:
+	var emissions: Array[bool] = []
+	health.depleted.connect(func() -> void: emissions.append(true))
+	return emissions
 
 
 func test_a_new_health_is_full() -> void:
@@ -102,13 +122,77 @@ func test_take_damage_stops_at_zero() -> void:
 	assert_int(health.current).is_equal(0)
 
 
-# 範囲の上限は take_damage() の中でも強制する
-func test_take_damage_never_raises_the_current_above_the_maximum() -> void:
+# 拒んだときに「体力が変わらない」だけでなく「待機の計測が振り出しに戻らない」ことも見る。
+# 0 は引いても体力が変わらないため、計測を見ないとガードを外す変異が素通りする
+func test_take_damage_rejects_an_amount_that_is_not_positive() -> void:
+	for amount: int in INVALID_AMOUNTS:
+		var health: Health = _new_health()
+		health.take_damage(DAMAGE)
+		health.tick(NEARLY_REGEN_DELAY)
+		var expected: String = INVALID_AMOUNT_ERROR_FORMAT % amount
+
+		await assert_error(func() -> void: health.take_damage(amount)).is_push_error(expected)
+
+		var after_error: int = health.current
+		# 待機が残り 1 フレーム分であること: 拒否が計測を戻していれば回復に届かない
+		health.tick(FRAME_DELTA)
+		health.tick(BIG_DELTA)
+		var context: String = "amount=%d" % amount
+		assert_array([after_error, health.current]).append_failure_message(context).is_equal(
+			[DAMAGED_CURRENT, DAMAGED_CURRENT + 2]
+		)
+
+
+# 正常系を境界のすぐ内側で通す: 拒否の範囲が 0 より広がる変異を、異常系のケースでは検出できない
+func test_take_damage_accepts_the_smallest_positive_amount() -> void:
 	var health: Health = _new_health()
 
-	health.take_damage(-DAMAGE)
+	await assert_error(func() -> void: health.take_damage(1)).is_success()
 
-	assert_int(health.current).is_equal(MAX_VALUE)
+	assert_int(health.current).is_equal(MAX_VALUE - 1)
+
+
+func test_depleted_is_emitted_once_when_the_current_reaches_zero() -> void:
+	var health: Health = _new_health()
+	var emissions: Array[bool] = _record_depleted(health)
+
+	health.take_damage(MAX_VALUE)
+	health.take_damage(DAMAGE)
+	health.take_damage(DAMAGE)
+
+	assert_array(emissions).is_equal([true])
+	assert_int(health.current).is_equal(0)
+	assert_bool(health.is_depleted).is_true()
+
+
+func test_depleted_is_not_emitted_while_the_current_stays_above_zero() -> void:
+	var health: Health = _new_health()
+	var emissions: Array[bool] = _record_depleted(health)
+
+	health.take_damage(MAX_VALUE - 1)
+	health.tick(REGEN_DELAY)
+	health.tick(BIG_DELTA)
+
+	assert_array(emissions).is_equal([])
+	assert_int(health.current).is_equal(3)
+	assert_bool(health.is_depleted).is_false()
+
+
+# 枯渇の後は追加の被弾でも自動回復でも状態が動かない。
+# tick を 2 回踏むのは、1 回目で待機が明けて 2 回目から回復が始まる形だから
+func test_a_depleted_health_does_not_change_state() -> void:
+	var health: Health = _new_health()
+	health.take_damage(MAX_VALUE)
+	var states: Array = []
+
+	health.take_damage(DAMAGE)
+	states.append([health.current, health.is_depleted])
+	health.tick(HUGE_DELTA)
+	states.append([health.current, health.is_depleted])
+	health.tick(HUGE_DELTA)
+	states.append([health.current, health.is_depleted])
+
+	assert_array(states).is_equal([[0, true], [0, true], [0, true]])
 
 
 func test_no_regen_while_the_delay_has_not_elapsed() -> void:
