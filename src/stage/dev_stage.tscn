@@ -1,7 +1,8 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/stage/dev_stage.gd" id="1_dev_stage"]
 [ext_resource type="PackedScene" path="res://src/player/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://src/stage/damage_zone.tscn" id="3_damage_zone"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
 size = Vector2(320, 16)
@@ -98,6 +99,9 @@ color = Color(0.24, 0.26, 0.32, 1)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="WallRight"]
 shape = SubResource("RectangleShape2D_wall")
+
+[node name="DamageZone" parent="." instance=ExtResource("3_damage_zone")]
+position = Vector2(112, 76)
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
 position = Vector2(48, 60)

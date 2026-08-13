@@ -233,7 +233,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 9.5 は各 `StaticBody2D` の `collision_layer` が 1、`Player` の `collision_layer` が 2 であることをアサーションする
       - 9.6 は `project.godot` の `run/main_scene` が `res://main.tscn` のままであることで検証する
     - 検証コマンド: `make test TESTS=res://tests/stage`、`grep -c 'TileMapLayer' src/stage/dev_stage.tscn`(0 であること)、`grep -q 'run/main_scene="res://main.tscn"' project.godot && echo OK`
-  - [ ] 7.2 `DamageZone` を実装し、触れている間 1 秒に 1 回ダメージを与える
+  - [x] 7.2 `DamageZone` を実装し、触れている間 1 秒に 1 回ダメージを与える
     _Requirements: 9.3_
     _Boundary: DamageZone_
     _Depends: 6.3, 7.1_
@@ -370,4 +370,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`StaticBody2D` の `collision_mask` は既定(1)のままにした**(タスク 7.1)。spec §6.5 は地形の layer しか定めておらず、静的な地形は自分から何も検出しないため mask は振る舞いに効かない。**テストは `collision_layer` だけを固定している。**
 - **シーンの構成を検証するテストはツリーへ載せない**(タスク 7.1)。`DEV_STAGE_SCENE.instantiate()` + `auto_free()` だけで `position`・`collision_layer`・子ノードの型を読める。`add_child()` すると `Player._ready()` と `_physics_process` が走って位置が変わるため、初期位置を検証するテストが壊れる。
 - **`run/main_scene` の検証は `ProjectSettings.get_setting("application/run/main_scene")` で行う**(タスク 7.1)。tasks.md の検証コマンドは `project.godot` への `grep` だが、テストからは設定値そのものを読むほうが直接的である(grep は commit 前の補助として併走させている)。期待値 `res://main.tscn` はテスト側に定数として持ち、実装から参照しない。
+- **`Callable` は `RefCounted` の所有者を強く参照しない**(タスク 7.2、実測)。`player.input_source = _make_idle_input().read` と書くとスタブが即座に解放され、`_physics_process` が `Attempt to call function 'null::read (Callable)' on a null instance` を毎フレーム出す(1 回の実行で 283 件)。**入力を差し替えるテストはスタブをスイートのメンバ(`Array`)に抱えること。** 既存の `tests/player/player_scene_test.gd` はローカル変数がテスト関数の実行中ずっと生きているため踏んでいない。
+- **`DamageZone` はプレイヤーを型ではなくメソッドの有無で見る**(タスク 7.2、spec が定めていない決定)。`body.has_method(&"take_damage")` で弾き、`Player` へ静的に依存しない。mask が 2 なので実際に入るのはプレイヤーだけだが、`foot-enemies`(unit #3)がレイヤを増やしても壊れない。
+- **周期の剰余は繰り越す**(タスク 7.2)。`while elapsed >= DAMAGE_INTERVAL` で減算するため、1 フレームが周期より長い環境でも与える回数が減らない。`body_exited` で `_elapsed` から取り除くので、出入りのたびに周期は接触からやり直しになる。
+- **「領域の外」は真上に取らない**(タスク 7.2、テストが 1 度落ちた)。プレイヤーは足場が無いと落下するため、領域の真上へ置くと落下の途中で通り抜けて `body_entered` が発火する。**横へずらして床の上に立たせること**(実装は `OUTSIDE_POSITION = (80, -40)`、領域は x が -32〜32)。離脱の検証は逆に領域側を遠くへ動かしている。
+- **`dev_stage.tscn` の `DamageZone` は `position = (112, 76)`**(タスク 7.2)。64×32px なので x が 80〜144、y が 60〜92 を覆い、床の上面(y=92)に接する。プレイヤーの開始位置 (48, 60) からは右へ歩くと入る。**タスク 7.4 の目視確認はこの位置に留まって体力を 0 にする。**
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
