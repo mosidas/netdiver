@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "foot-enemies",
-  "state": "initialized",
+  "state": "spec-generated",
   "approvals": {
     "spec": false,
     "tasks": false
