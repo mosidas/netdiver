@@ -1,0 +1,15 @@
+{
+  "workflow": "sdd",
+  "unit": "foot-player",
+  "state": "completed",
+  "approvals": {
+    "spec": true,
+    "tasks": true
+  },
+  "created": "2026-08-12",
+  "updated": "2026-08-13",
+  "frozen": {
+    "spec.md": "609814824648d47021fa115fce9a10c4726a92b6a72dd4315e82003824c06d49",
+    "tasks.md": "a296148b6f709082d7a9f8bd2b4d87f7648eedb2ef815e3f6c1061220b6d35e3"
+  }
+}
