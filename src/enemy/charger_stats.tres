@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="EnemyStats" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/enemy/enemy_stats.gd" id="1_enemy_stats"]
+
+[resource]
+script = ExtResource("1_enemy_stats")
+max_hp = 30
+gravity = 600.0
+move_speed = 40.0
+detect_range = 128.0
+telegraph_time = 0.4
+attack_damage = 15
+attack_speed = 150.0
+attack_duration = 0.6
+recover_time = 0.8
+bullet_max_distance = 0.0

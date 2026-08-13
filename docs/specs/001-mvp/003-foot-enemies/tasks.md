@@ -56,7 +56,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   タスク 3・4・5 は並行して進められるが、いずれも `EnemyStats` と 2 つの enum を共有する。Step 4(契約先行)に従い、共有する契約を最初に確定させる。
 
-  - [ ] 1.1 `EnemyStats`(`Resource`)と `EnemyState`・`EnemyKind` の enum、2 種の `.tres` を作り、既定値・0 の意味・`CombatLimits` への準拠をテストで固定する
+  - [x] 1.1 `EnemyStats`(`Resource`)と `EnemyState`・`EnemyKind` の enum、2 種の `.tres` を作り、既定値・0 の意味・`CombatLimits` への準拠をテストで固定する
     _Requirements: 7.1, 7.2, 7.3, 8.2, 8.5, 8.6, 8.7_
     _Boundary: EnemyStats_
     - 対象ファイル: `src/enemy/enemy_stats.gd`(新規), `src/enemy/enemy_state.gd`(新規), `src/enemy/enemy_kind.gd`(新規), `src/enemy/charger_stats.tres`(新規), `src/enemy/shooter_stats.tres`(新規), `tests/enemy/enemy_stats_test.gd`(新規)
@@ -326,4 +326,19 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付き・レビューを通過した境界外変更の申告を追記する領域。初期は空でよい)
+### 知識 port の選択
+
+`docs/dev/ports/` が存在しないため、注入する知識 port は**なし**(`ports.py --skill dev-implement --root docs/dev/ports` の結果)。
+
+### 実装開始時の基準点
+
+- `make test` の基線: 186 test cases / 0 errors / 0 failures / 0 skipped / 0 orphans(実装開始前に実測)。
+- 凍結対象の内容ハッシュは実装開始時点で tasks.md の期待値と一致することを確認済み(`combat_limits.gd` / `dev_stage.tscn` / `player.tscn` / `projectile.tscn`)。
+- テストの書き方の規約は `docs/testing.md` にある(物理フレームを進めるテスト・仮ステージの目視確認の節)。既存の `tests/` 配下の同種のテストを手本にする。
+
+### 実装中の学習
+
+- **`EnemyStats` のスクリプト側の既定値は突進型の値に揃えた**(タスク 1.1)。`.tres` の 10 項目がすべてスクリプトの既定値と同値になるため、`charger_stats.tres` から行を削除してもテストが緑のまま(レビューの変異 M9 で実測)。読み込み後の値は表どおりで要件 8.5 の観点では実害が無く、スクリプト側の既定値は `test_enemy_stats_script_defaults` が別に固定しているため、そのままにした。**`charger_stats.tres` を編集するときは「行が消えても気付けない」ことを念頭に置くこと。**
+- **`assert_object(a).is_same(b)` は 8.2 の担保にならない**(タスク 1.1)。`ResourceLoader.load()` は既定でキャッシュを返すため、どう実装しても真になる。8.2 を実際に守っているのは `resource_local_to_scene` が偽であることのアサーションであり、変異(`.tres` に `resource_local_to_scene = true` を足す)はそちらで落ちる。
+- **要件 8.7 のシーン側の検証(埋め込みサブリソースを持たないこと)はタスク 1.1 では行っていない**。対象のシーンが未作成のため、タスク 2.3(`charger_enemy.tscn`)・5.3(`shooter_enemy.tscn`)で足すこと。タスク 1.1 の実装の要点が明示的に繰り延べを許容している。
+- **前セッションの中断からの復旧**(タスク 1.1)。成果物はステージ済み・未コミットで、レビューを通していなかった。本セッションで correctness 観点のレビューを実施して `APPROVED`(Critical / Major / Minor なし、変異 20 種中 19 種を検出)を得てからコミットした。破棄してやり直さなかったのは、10 項目 × 2 種の値を spec.md §6.1 の表と 1 行ずつ突き合わせて一致を確認できたためである。
