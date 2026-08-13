@@ -84,7 +84,7 @@ func kind() -> int                                # EnemyKind.Kind。派生ク�
 - **標的の解決**: `@export var target: Node2D` を持ち、標的を外から注入する。仮ステージはシーンの宣言(`[node]` のプロパティ)で `Player` を指す。**これはテストが標的を差し替えるための公開点であり、契約の一部である**(unit #2 の `Player.input_source` と同じ位置づけ)
 - **標的が不在のフレーム**: `target` が `null`(または解放済み)のとき、`push_error` を出さず、標的までの距離を `INF` として `Brain` へ渡す。異常ではなく想定内の状態として扱うのは、シーン構成を検証するテストが敵を単体で生成する経路を正常な使い方に含めるためである
 - **標的を失った時点の状態で挙動が分かれる**: `IDLE` の間に失った場合は索敵範囲・突進の到達距離のいずれも満たさないため `IDLE` に留まり、水平には動かない(§7 1.15)。**`TELEGRAPH` 以降の途中で失った場合は、進行中の状態遷移を最後まで完走する**(距離の変化で遷移を打ち切らない。突進型は §7 2.7、射撃型は §7 4.11)
-- **標的が不在のまま攻撃のフレームに達したときは、その回の攻撃を取りやめる**。射撃型は弾を生成せずに `COOLDOWN` へ、突進型は突進せずに `RECOVER` へ移る。向きが決まらないまま `Vector2.ZERO` を `EnemyProjectile.launch()` へ渡すと §5.7 の事前条件に反し、解放済みノードの位置を読むと実行時エラーになるためである。最後に観測した向きを保持する案は採らない(`Brain` に状態変数が増え、到達可能な状態の表が広がる)
+- **標的が不在のまま攻撃のフレームに達したときは、その回の攻撃を取りやめる**。突進型は `ChargerBrain` が距離 `INF` を見て `CHARGE` を飛ばし `RECOVER` へ移る(§7 2.11)。射撃型は `ShooterBrain` が真を返して `COOLDOWN` へ移り、`ShooterEnemy` が弾の生成だけを取りやめる(§7 4.13)。突進型を `Brain` 側で閉じるのは、突進が状態遷移そのものを変える一方、射撃は弾を出すか出さないかだけの差だからである。向きが決まらないまま `Vector2.ZERO` を `EnemyProjectile.launch()` へ渡すと §5.7 の事前条件に反し、解放済みノードの位置を読むと実行時エラーになるためである。最後に観測した向きを保持する案は採らない(`Brain` に状態変数が増え、到達可能な状態の表が広がる)
 - **`kind()` の基底実装**: `Enemy` を直接生成した場合に備え、基底は `EnemyKind.Kind.CHARGER` を返す。派生クラスが必ず上書きする
 
 ### 5.2 `ChargerEnemy`(`Enemy`)
@@ -96,7 +96,7 @@ var brain: ChargerBrain                           # テストのための公開�
 
 - `ChargerBrain` を 1 つ持ち、毎物理フレーム `target` までの距離を算出して `update()` に渡す(`target` が `null` なら `INF`)
 - `ChargerBrain.state` に応じて水平の速度を決める。`IDLE` では距離が `stats.detect_range` 以下のときだけ `stats.move_speed` でプレイヤーへ接近し(範囲外では停止)、`CHARGE` では突進を始めた時点の向きへ `stats.attack_speed` で進み、`TELEGRAPH` と `RECOVER` では停止する
-- `Attackbox`(子の `Area2D`)の `monitoring` を `brain.is_attack_active` に一致させる
+- `Attackbox`(子の `Area2D`)の `monitoring` を `brain.is_attack_active` に一致させる。**`is_defeated` が真になった後はこの一致より撃破時の停止が優先し、`monitoring` を偽に保つ**(§7 3.5・3.10)
 - `_ready()` で `Attackbox.damage` に `stats.attack_damage` を代入する(シーンへ値を焼き込まない。§7 8.1)
 - `kind()` は `EnemyKind.Kind.CHARGER` を返す
 
@@ -124,8 +124,8 @@ var state: int                                    # EnemyState.State
 var is_attack_active: bool
 ```
 
-- **状態遷移**: `IDLE` →(距離が突進の到達距離以下)→ `TELEGRAPH` →(`telegraph_time` 経過)→ `CHARGE` →(`attack_duration` 経過)→ `RECOVER` →(`recover_time` 経過)→ `IDLE`
-- **`IDLE` の間は `state` を変えない**。接近するかどうか(`detect_range` との比較)は `ChargerBrain` の出力に現れず、`ChargerEnemy` が §7 3.1・3.2 として持つ
+- **状態遷移**: `IDLE` →(距離が突進の到達距離以下)→ `TELEGRAPH` →(`telegraph_time` 経過。距離が有限なら `CHARGE`、`INF` なら `RECOVER`)→ `CHARGE` →(`attack_duration` 経過)→ `RECOVER` →(`recover_time` 経過)→ `IDLE`
+- **`IDLE` から出る条件は距離だけで決まる**。`detect_range`(索敵範囲)は遷移の条件に使わず、接近するかどうかの判断にのみ効く。接近は `ChargerBrain` の出力(`state`・`is_attack_active`)に現れず、`ChargerEnemy` が §7 3.1・3.2 として持つ
 - **`TELEGRAPH` へ移る条件**: 距離が突進の到達距離(`attack_speed * attack_duration`)以下であること。索敵範囲ではなく到達距離を条件にするのは、届かない位置から突進を始めないためである
 - **`is_attack_active`**: `state` が `CHARGE` のときだけ真
 - **事前条件**: `update()` の `delta` は正、`distance_to_target` は 0 以上。満たさない場合は `push_error` を出し、状態を変えずに返る
@@ -198,6 +198,7 @@ func arm() -> void                                # 与済みの記録を落と�
 - `monitoring` が真の間に `body_entered` で相手が `take_damage` を持つとき、`take_damage(damage)` を 1 回だけ呼ぶ
 - **与済みの記録は `Attackbox` が持つ**。`ChargerEnemy` は `CHARGE` へ入るたびに `arm()` を呼んで記録を落とす。記録の所在を `Attackbox` に置くのは、判定の有無を知っているのが `Attackbox` 自身だからである(貧血な領域にしない)
 - **事前条件**: `damage` は正。`arm()` は `monitoring` を真にする前に呼ぶ
+- 所有者が撃破された後(`Enemy.is_defeated` が真)は `monitoring` を偽に保つ。`ChargerBrain` の `is_attack_active` が真のままでもこちらが優先する(§7 3.10)
 - **エラー**: 相手が `take_damage` を持たない場合は何もしない(`push_error` を出さない)。mask 2 にはプレイヤー以外が載らないため、異常ではなく想定内の素通りとして扱う
 - `DamageZone`(unit #2 §5.8)と同じく、相手を型ではなくメソッドの有無で見る
 
@@ -337,13 +338,14 @@ tests/stage/    ...
 2.1. システムは、`state` の初期値を `IDLE` としなければならない。(常時)
 2.2. `IDLE` の状態で距離が突進の到達距離(`attack_speed * attack_duration`)より大きい間、システムは `state` を `IDLE` のまま保たなければならない。(状態)
 2.3. `IDLE` の状態で距離が突進の到達距離以下になったとき、システムは `state` を `TELEGRAPH` にしなければならない。(イベント)
-2.4. `TELEGRAPH` の状態で滞在時間が `telegraph_time` に達したとき、システムは `state` を `CHARGE` にしなければならない。(イベント)
+2.4. `TELEGRAPH` の状態で滞在時間が `telegraph_time` に達し、かつ `distance_to_target` が有限のとき、システムは `state` を `CHARGE` にしなければならない。(イベント)
 2.5. `CHARGE` の状態で滞在時間が `attack_duration` に達したとき、システムは `state` を `RECOVER` にしなければならない。(イベント)
 2.6. `RECOVER` の状態で滞在時間が `recover_time` に達したとき、システムは `state` を `IDLE` にしなければならない。(イベント)
-2.7. `TELEGRAPH`・`CHARGE`・`RECOVER` の間、システムは距離の変化によって遷移を打ち切ってはならない。(状態)
+2.7. `TELEGRAPH`・`CHARGE`・`RECOVER` の間、システムは距離の変化によって滞在時間の満了より前に遷移させてはならない(満了時の遷移先が距離で変わることは 2.11 が定める)。(状態)
 2.8. システムは、`is_attack_active` を `state` が `CHARGE` のときだけ真としなければならない。(常時)
 2.9. 状態が遷移したフレームにおいて、システムは消化した `delta` を遷移先の滞在時間へ数えてはならない。(状態)
 2.10. `delta` が 0 以下、または `distance_to_target` が負の値で `update()` が呼ばれた場合、システムは `push_error` を出し `state` と `is_attack_active` を変えずに返らなければならない。(異常系)
+2.11. `TELEGRAPH` の状態で滞在時間が `telegraph_time` に達したとき、`distance_to_target` が `INF` の場合、システムは `push_error` を出さず `state` を `RECOVER` にしなければならない(標的を失った回の突進を取りやめる)。(異常系)
 
 ### Requirement 3: 突進型の移動と攻撃判定
 
@@ -355,13 +357,12 @@ tests/stage/    ...
 3.2. `IDLE` の状態で距離が `detect_range` より大きいとき、システムは水平の速度を 0 としなければならない。(イベント)
 3.3. `TELEGRAPH` と `RECOVER` の間、システムは水平の速度を 0 としなければならない。(状態)
 3.4. `CHARGE` の間、システムは水平の速度を、突進を始めた時点の標的の側の向きへ `stats.attack_speed` としなければならない(突進中に向きを変えない)。(状態)
-3.5. システムは、`Attackbox` の `monitoring` を `ChargerBrain.is_attack_active` に一致させなければならない。(常時)
+3.5. `is_defeated` が偽の間、システムは `Attackbox` の `monitoring` を `brain.is_attack_active` に一致させなければならない(撃破された後は 3.10 が支配する)。(状態)
 3.6. `CHARGE` の間に `Attackbox` がプレイヤーに触れたとき、システムはプレイヤーの `take_damage(stats.attack_damage)` を 1 回だけ呼ばなければならない。(イベント)
 3.7. 1 回の突進の間にプレイヤーへ触れ続ける場合、システムはダメージを 2 回以上与えてはならない。(状態)
 3.8. 新たに `CHARGE` へ入ったとき、システムはダメージを与済みとする記録を落とし、再びダメージを与えられる状態にしなければならない。(イベント)
 3.9. `Attackbox` が触れた相手が `take_damage` を持たない場合、システムは何もしてはならない。(異常系)
-3.10. `CHARGE` へ移るフレームで `target` が `null` または解放済みの場合、システムは突進せず、`push_error` を出さずに `RECOVER` へ移らなければならない。(異常系)
-3.11. `is_defeated` が真になったとき、システムは同じ物理フレームのうちに `Attackbox` の `monitoring` を偽にしなければならない(撃破された敵が解放までの間にダメージを与えない)。(イベント)
+3.10. `is_defeated` が真になったとき、システムは同じ物理フレームのうちに `Attackbox` の `monitoring` を偽にしなければならない(撃破された敵が解放までの間にダメージを与えない)。(イベント)
 
 ### Requirement 4: 射撃型の状態遷移と発射
 
@@ -375,11 +376,11 @@ tests/stage/    ...
 4.4. `COOLDOWN` の間、システムは偽を返し続けなければならない。(状態)
 4.5. `COOLDOWN` の状態で滞在時間が `recover_time` に達したとき、システムは `state` を `IDLE` にしなければならない。(イベント)
 4.6. システムは、真を返すフレームを `TELEGRAPH` を抜ける 1 フレームだけに限らなければならない。(常時)
-4.7. `update()` が真を返したとき、システムは敵弾を 1 発生成し、標的へ向かう単位ベクトルの向きへ `stats.attack_speed`・`stats.attack_damage`・`stats.bullet_max_distance` で発射しなければならない。(イベント)
+4.7. `update()` が真を返したフレームで `target` が存在し、かつ `projectile_scene` が設定されているとき、システムは敵弾を 1 発生成し、標的へ向かう単位ベクトルの向きへ `stats.attack_speed`・`stats.attack_damage`・`stats.bullet_max_distance` で発射しなければならない。(イベント)
 4.8. システムは、射撃型の水平の速度を常に 0 としなければならない。(常時)
 4.9. `projectile_scene` が未設定の状態で発射のフレームに達した場合、システムは `push_error` を出し、弾を生成してはならない。(異常系)
 4.10. `delta` が 0 以下、または `distance_to_target` が負の値で `update()` が呼ばれた場合、システムは `push_error` を出し `state` を変えず偽を返さなければならない。(異常系)
-4.11. `TELEGRAPH`・`COOLDOWN` の間、システムは距離の変化によって遷移を打ち切ってはならない。(状態)
+4.11. `TELEGRAPH`・`COOLDOWN` の間、システムは距離の変化によって滞在時間の満了より前に遷移させてはならない。(状態)
 4.12. 状態が遷移したフレームにおいて、システムは消化した `delta` を遷移先の滞在時間へ数えてはならない。(状態)
 4.13. `update()` が真を返したフレームで `target` が `null` または解放済みの場合、システムは弾を生成せず、`push_error` を出さずに `COOLDOWN` へ移らなければならない。(異常系)
 4.14. システムは、敵弾を自分の親(`get_parent()`)へ追加し、発射位置を敵自身の位置に決めてから `launch()` を呼ばなければならない(`launch()` の後に位置を動かさない)。(常時)
