@@ -83,7 +83,8 @@ func kind() -> int                                # EnemyKind.Kind。派生ク�
 - **placeholder と衝突形状**: `ColorRect` と `CollisionShape2D` をともに 16×16px とし、ノードの原点を矩形の中心に置く。`Hurtbox` の形状は本体の衝突形状と同じ矩形とし、本体からはみ出させない(はみ出すと、弾の解放(本体との接触)と被弾(`Hurtbox`)の片方だけが成立しうる)
 - **標的の解決**: `@export var target: Node2D` を持ち、標的を外から注入する。仮ステージはシーンの宣言(`[node]` のプロパティ)で `Player` を指す。**これはテストが標的を差し替えるための公開点であり、契約の一部である**(unit #2 の `Player.input_source` と同じ位置づけ)
 - **標的が不在のフレーム**: `target` が `null`(または解放済み)のとき、`push_error` を出さず、標的までの距離を `INF` として `Brain` へ渡す。異常ではなく想定内の状態として扱うのは、シーン構成を検証するテストが敵を単体で生成する経路を正常な使い方に含めるためである
-- **標的を失った時点の状態で挙動が分かれる**: `IDLE` の間に失った場合は索敵範囲・突進の到達距離のいずれも満たさないため `IDLE` に留まり、水平には動かない(§7 1.15)。**`TELEGRAPH`・`CHARGE`・`RECOVER`・`COOLDOWN` の途中で失った場合は、§7 2.7 が優先し、進行中の状態遷移を最後まで完走する**(距離の変化で遷移を打ち切らない)
+- **標的を失った時点の状態で挙動が分かれる**: `IDLE` の間に失った場合は索敵範囲・突進の到達距離のいずれも満たさないため `IDLE` に留まり、水平には動かない(§7 1.15)。**`TELEGRAPH` 以降の途中で失った場合は、進行中の状態遷移を最後まで完走する**(距離の変化で遷移を打ち切らない。突進型は §7 2.7、射撃型は §7 4.11)
+- **標的が不在のまま攻撃のフレームに達したときは、その回の攻撃を取りやめる**。射撃型は弾を生成せずに `COOLDOWN` へ、突進型は突進せずに `RECOVER` へ移る。向きが決まらないまま `Vector2.ZERO` を `EnemyProjectile.launch()` へ渡すと §5.7 の事前条件に反し、解放済みノードの位置を読むと実行時エラーになるためである。最後に観測した向きを保持する案は採らない(`Brain` に状態変数が増え、到達可能な状態の表が広がる)
 - **`kind()` の基底実装**: `Enemy` を直接生成した場合に備え、基底は `EnemyKind.Kind.CHARGER` を返す。派生クラスが必ず上書きする
 
 ### 5.2 `ChargerEnemy`(`Enemy`)
@@ -211,7 +212,7 @@ class_name EnemyStats extends Resource
 @export var max_hp: int = 30
 @export var gravity: float = 600.0
 @export var move_speed: float = 40.0
-@export var detect_range: float = 96.0
+@export var detect_range: float = 128.0
 @export var telegraph_time: float = 0.4
 @export var attack_damage: int = 15
 @export var attack_speed: float = 150.0
@@ -227,7 +228,7 @@ class_name EnemyStats extends Resource
 | `max_hp` | 30 | 20 | 主武器(`primary_damage` = 10)で 3 発 / 2 発、副武器(`secondary_damage` = 50)で 1 発。副武器の使いどころが成立する粒度 |
 | `gravity` | 600.0 | 600.0 | `PlayerStats.gravity` と揃える。同じ地形の上で落ち方が違うと配置の見当がつかない |
 | `move_speed` | 40.0 | 0.0 | プレイヤー(100.0)の 0.4 倍。企画書 2. の「重い機動」。射撃型は定点のため 0.0(移動しないことを表す) |
-| `detect_range` | 96.0 | 160.0 | 射撃型は画面の半分(320px の半分)で反応し「距離を取って撃つ」(企画書 7.)。突進型はその内側 |
+| `detect_range` | 128.0 | 160.0 | 射撃型は画面の半分(320px の半分)で反応し「距離を取って撃つ」(企画書 7.)。突進型は、検知から予備動作の開始(突進の到達距離 90px)まで `(128 - 90) / 40` = 約 0.95 秒の接近が見える長さにし、企画書 7.「接近して攻撃する」を振る舞いとして表す |
 | `telegraph_time` | 0.4 | 0.4 | `CombatLimits.ENEMY_TELEGRAPH_MIN_TIME`(0.4)と同値。企画書 5.「予備動作を目視で識別でき、見てから移動を始めても間に合う」 |
 | `attack_damage` | 15 | 10 | `PlayerStats.max_health` = 100 の根拠表が示す「1 発 10〜20、5〜10 発で撃破」の粒度 |
 | `attack_speed` | 150.0 | 120.0 | `CombatLimits.ENEMY_BULLET_MAX_SPEED`(150.0)の内側。弾は余裕を残して 120.0、突進は上限そのもの |
@@ -236,7 +237,8 @@ class_name EnemyStats extends Resource
 | `bullet_max_distance` | 0.0 | 216.0 | 弾速 120 px/s で 1.8 秒。発射の周期(`telegraph_time` 0.4 + `recover_time` 1.5 = 1.9 秒)より短いため、1 体の射撃型から同時に 2 発が存在しない。画面幅 320px のおよそ 3 分の 2(216 / 320 = 0.675)で、画面を横切る前に消える。突進型は弾を持たないため 0.0 |
 
 - **不変条件**: `max_hp`・`gravity`・`detect_range`・`telegraph_time`・`attack_damage`・`attack_speed` は正。`move_speed`・`attack_duration`・`recover_time`・`bullet_max_distance` は 0 以上とし、**0 は「その振る舞いを持たない」ことを表す**(射撃型の `move_speed`・`attack_duration`、突進型の `bullet_max_distance`)。満たさない値が設定された場合は `Enemy._ready()` の検査で `push_error` を出す
-- **既定値の実体は `.tres` に置く**(`src/enemy/charger_stats.tres` / `shooter_stats.tres`)。シーンへ埋め込むサブリソースにしない。unit #2 の `player.tscn` は `stats` を埋め込みサブリソースにしたため、`resource_local_to_scene` が無く複数インスタンス化すると値が共有される(同 `tasks.md` の申し送り)。`.tres` を各シーンから参照する形にし、インスタンスごとに値を変えたい場合は `resource_local_to_scene` を真にする
+- **既定値の実体は `.tres` に置く**(`src/enemy/charger_stats.tres` / `shooter_stats.tres`)。理由は**編集点の一元化**であり、値の共有・非共有とは無関係である(共有を断つのは `resource_local_to_scene` の有無であって、ファイルが外部か埋め込みかではない。unit #2 の `player.tscn` の申し送りも同じことを述べている)
+- **`.tres` は種別ごとに 1 個を全個体で共有する**。`resource_local_to_scene` は使わない。実行時に個体差を与える要件が本単位に無く、複製すると調整のたびに個体ごとの差分を追う必要が生じるためである。同じ種別の敵を 2 体置いた場合、一方の `stats` の項目を変えると他方も変わる
 - **`telegraph_time >= CombatLimits.ENEMY_TELEGRAPH_MIN_TIME` と `attack_speed <= CombatLimits.ENEMY_BULLET_MAX_SPEED`** は企画書 5. の条件であり、テストで固定する(§7 Requirement 7)
 
 ### 6.2 `EnemyState`
@@ -298,6 +300,8 @@ tests/stage/    ...
 
 **受け入れ基準**:
 
+**検証の形式**: 1.1〜1.11 と 1.23 は敵をツリーへ載せずに直接呼んで検証する(物理フレーム不要)。1.12・1.13 は `instantiate()` + `auto_free()` でシーンの構成を読む。1.14〜1.22 はツリーへ載せて物理フレームを進める。1.21 は `target` に位置を制御できるスタブ(`Node2D`)を注入し、規定のフレーム数を過ぎたら索敵範囲の外へ動かして移動を打ち切ることで、消化したフレーム数と変位を対応付ける(unit #2 の `input_source` スタブと同じ形。`docs/testing.md`「消化したフレーム数をアサーションで確かめる」)。
+
 1.1. システムは、`hp` の初期値を `stats.max_hp` としなければならない。(常時)
 1.2. 正の `amount` で `take_damage()` が呼ばれたとき、システムは `hp` を `amount` だけ減らさなければならない。(イベント)
 1.3. システムは、`hp` を 0 未満にしてはならない。(常時)
@@ -320,6 +324,7 @@ tests/stage/    ...
 1.20. システムは、`ChargerBrain.update()`・`ShooterBrain.update()` の中で `move_and_slide()` を呼んではならない。(常時)
 1.21. 水平の速度を持つ敵がシーンツリーの上で 3 物理フレームぶん進んだとき、システムは水平の位置をその速度と `Engine.physics_ticks_per_second` から定まる値だけ変えなければならない(許容差 0.001)。(イベント)
 1.22. システムは、`brain` を外から読める公開点として持たなければならない。(常時)
+1.23. `Enemy` を直接生成した場合、システムは `kind()` に `EnemyKind.Kind.CHARGER` を返させなければならない。(常時)
 
 ### Requirement 2: 突進型の状態遷移
 
@@ -346,15 +351,17 @@ tests/stage/    ...
 
 **受け入れ基準**:
 
-3.1. `IDLE` の状態で距離が `detect_range` 以下のとき、システムは水平の速度を `stats.move_speed` でプレイヤーの側へ向けなければならない。(イベント)
+3.1. `IDLE` の状態で距離が `detect_range` 以下のとき、システムは水平の速度を `stats.move_speed` で標的の側へ向けなければならない。(イベント)
 3.2. `IDLE` の状態で距離が `detect_range` より大きいとき、システムは水平の速度を 0 としなければならない。(イベント)
 3.3. `TELEGRAPH` と `RECOVER` の間、システムは水平の速度を 0 としなければならない。(状態)
-3.4. `CHARGE` の間、システムは水平の速度を、突進を始めた時点のプレイヤーの側の向きへ `stats.attack_speed` としなければならない(突進中に向きを変えない)。(状態)
+3.4. `CHARGE` の間、システムは水平の速度を、突進を始めた時点の標的の側の向きへ `stats.attack_speed` としなければならない(突進中に向きを変えない)。(状態)
 3.5. システムは、`Attackbox` の `monitoring` を `ChargerBrain.is_attack_active` に一致させなければならない。(常時)
 3.6. `CHARGE` の間に `Attackbox` がプレイヤーに触れたとき、システムはプレイヤーの `take_damage(stats.attack_damage)` を 1 回だけ呼ばなければならない。(イベント)
 3.7. 1 回の突進の間にプレイヤーへ触れ続ける場合、システムはダメージを 2 回以上与えてはならない。(状態)
 3.8. 新たに `CHARGE` へ入ったとき、システムはダメージを与済みとする記録を落とし、再びダメージを与えられる状態にしなければならない。(イベント)
 3.9. `Attackbox` が触れた相手が `take_damage` を持たない場合、システムは何もしてはならない。(異常系)
+3.10. `CHARGE` へ移るフレームで `target` が `null` または解放済みの場合、システムは突進せず、`push_error` を出さずに `RECOVER` へ移らなければならない。(異常系)
+3.11. `is_defeated` が真になったとき、システムは同じ物理フレームのうちに `Attackbox` の `monitoring` を偽にしなければならない(撃破された敵が解放までの間にダメージを与えない)。(イベント)
 
 ### Requirement 4: 射撃型の状態遷移と発射
 
@@ -368,10 +375,14 @@ tests/stage/    ...
 4.4. `COOLDOWN` の間、システムは偽を返し続けなければならない。(状態)
 4.5. `COOLDOWN` の状態で滞在時間が `recover_time` に達したとき、システムは `state` を `IDLE` にしなければならない。(イベント)
 4.6. システムは、真を返すフレームを `TELEGRAPH` を抜ける 1 フレームだけに限らなければならない。(常時)
-4.7. `update()` が真を返したとき、システムは敵弾を 1 発生成し、プレイヤーへ向かう単位ベクトルの向きへ `stats.attack_speed`・`stats.attack_damage`・`stats.bullet_max_distance` で発射しなければならない。(イベント)
+4.7. `update()` が真を返したとき、システムは敵弾を 1 発生成し、標的へ向かう単位ベクトルの向きへ `stats.attack_speed`・`stats.attack_damage`・`stats.bullet_max_distance` で発射しなければならない。(イベント)
 4.8. システムは、射撃型の水平の速度を常に 0 としなければならない。(常時)
 4.9. `projectile_scene` が未設定の状態で発射のフレームに達した場合、システムは `push_error` を出し、弾を生成してはならない。(異常系)
 4.10. `delta` が 0 以下、または `distance_to_target` が負の値で `update()` が呼ばれた場合、システムは `push_error` を出し `state` を変えず偽を返さなければならない。(異常系)
+4.11. `TELEGRAPH`・`COOLDOWN` の間、システムは距離の変化によって遷移を打ち切ってはならない。(状態)
+4.12. 状態が遷移したフレームにおいて、システムは消化した `delta` を遷移先の滞在時間へ数えてはならない。(状態)
+4.13. `update()` が真を返したフレームで `target` が `null` または解放済みの場合、システムは弾を生成せず、`push_error` を出さずに `COOLDOWN` へ移らなければならない。(異常系)
+4.14. システムは、敵弾を自分の親(`get_parent()`)へ追加し、発射位置を敵自身の位置に決めてから `launch()` を呼ばなければならない(`launch()` の後に位置を動かさない)。(常時)
 
 ### Requirement 5: 敵弾
 
@@ -420,9 +431,9 @@ tests/stage/    ...
 **受け入れ基準**:
 
 8.1. システムは、敵の手触りを決める数値を `EnemyStats` の項目としてのみ保持しなければならない(実装のコードへ直書きしない)。(常時)
-8.2. システムは、`EnemyStats` の各インスタンスが値を共有しないようにしなければならない。(常時)
+8.2. システムは、種別ごとに 1 個の `EnemyStats` を全個体で共有しなければならない(`resource_local_to_scene` を使わない)。(常時)
 8.3. `move_speed`・`attack_duration`・`bullet_max_distance` に 0.0 が設定されたとき、システムはこれを「その振る舞いを持たない」として扱い、`push_error` を出してはならない。(イベント)
-8.4. `max_hp`・`gravity`・`detect_range`・`telegraph_time`・`attack_damage`・`attack_speed` に 0 以下が設定された状態で `_ready()` が呼ばれた場合、システムは `push_error` を出さなければならない。(異常系)
+8.4. 0 を許す項目(`move_speed`・`attack_duration`・`bullet_max_distance`)以外の数値項目に 0 以下が設定された状態で `_ready()` が呼ばれた場合、システムは `push_error` を出さなければならない。検査の対象は `get_property_list()` から導き、0 を許す項目名の集合だけを実装が持たなければならない(項目名を固定で列挙しない)。(異常系)
 8.5. システムは、突進型・射撃型の既定値を §6.1 の表のとおりとしなければならない。(常時)
 8.6. システムは、射撃型の弾の寿命(`bullet_max_distance / attack_speed`)を、発射の周期(`telegraph_time + recover_time`)より短くしなければならない(1 体の射撃型から同時に 2 発を存在させない)。(常時)
 8.7. システムは、既定値の実体を `.tres` として持ち、シーンへ埋め込むサブリソースにしてはならない。(常時)
