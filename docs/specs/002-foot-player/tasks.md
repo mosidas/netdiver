@@ -195,7 +195,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 3.4 は、`facing` と `aim_y` を変えたコマンドで生成された `Projectile` の進行方向が `AimResolver.resolve()` の戻り値と一致することで検証する(`Player` が方向を独自に計算していないこと)
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-- [ ] 6. 体力と自動回復
+- [x] 6. 体力と自動回復
   - [x] 6.1 (P) `Health` を実装する。範囲の強制・被弾・待機時間・自動回復・上限での停止
     _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
     _Boundary: Health_
@@ -211,7 +211,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §6.4「`depleted` のエッジ検出は `Health` が持つ」
     - 実装の要点: 6.6 は `assert_signal` で発火回数がちょうど 1 回であることを検証する(0 になった後の追加の `take_damage()` で増えないこと)。6.9 は `await assert_error(...)` で `push_error` と状態不変の両方を検証する
     - 検証コマンド: `make test TESTS=res://tests/player`
-  - [ ] 6.3 `Player` へ `Health` を統合し、`take_damage()` の委譲・`tick()` の呼び出し・`depleted` から `died` への中継を実装する
+  - [x] 6.3 `Player` へ `Health` を統合し、`take_damage()` の委譲・`tick()` の呼び出し・`depleted` から `died` への中継を実装する
     _Requirements: 6.7_
     _Boundary: Player_
     _Depends: 5.3, 6.2_
@@ -361,4 +361,8 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`take_damage()` の引数の検査は枯渇の判定より前に置く**(タスク 6.2、spec が定めていない決定)。§6.4 は評価順序を定めていないが、枯渇後でも呼び出し側の誤り(0 以下の `amount`)は知らせるべきだと判断した。**枯渇済みの `Health` へ 0 を渡すと `push_error` が出る。**
 - **異常系のテストは「体力が変わらない」だけでは足りず「待機の計測が戻らない」ことも見る**(タスク 6.2)。`amount = 0` は引いても体力が変わらないため、`current` だけを見るとガードを外す変異が素通りする。被弾 → `NEARLY_REGEN_DELAY` まで待つ → 拒否 → 残り 1 フレーム分の `tick()` で回復が始まる、という並びで計測の連続性を固定した。
 - **変異で検証した**(タスク 6.2、`tests/player` 93 ケースに対して実測): `tick()` の枯渇ガードを外す → 1 件失敗、`amount <= 0` のガードを外す → 6 件失敗、`take_damage()` の枯渇ガードを外す → 1 件失敗。**枯渇ガードの 2 件はいずれも 1 件でしか落ちない**(`test_a_depleted_health_does_not_change_state` と `TICK_TABLE` の `DEPLETED` 行)。タスク 6.3 で `Player` 側へ処理を足すとき、この 2 本を壊さないこと。
+- **`health` は `_ready()` と、`apply_command()`・`take_damage()` の両方から `_ensure_health()` で作る**(タスク 6.3、spec が定めていない決定)。タスク 6.3 は `_ready()` 生成と定めるが、`apply_command()` はツリーへ載せずに呼べる契約であり(既存 `tests/player/player_move_test.gd` がそう呼ぶ)、`_ready()` だけで作ると `health` が null になって `health.tick(delta)` が落ちる。null ガードで読み飛ばす案は採らなかった: `take_damage()` が黙って無視され、`Player` の体力が「ツリーに載せたかどうか」で変わるため。武器の遅延生成(タスク 5.3)と同じ形に揃え、`_ready()` からも呼んで「ツリーへ載せた直後に `health` がある」ことは保つ。**この結果、最初の `apply_command()`・`take_damage()` より後に `stats` を差し替えても `max_health`・`regen_delay`・`regen_per_second` は古い値のまま残る**(武器と同じ制約)。
+- **`health.tick(delta)` は `delta <= 0.0` のガードより後ろに置く**(タスク 6.3)。前に置く変異は「体力が変わらない」だけを見るテストでは素通りする: 負の delta で `Health` の端数 `_regen_remainder` が負に汚れても、`floori(負) <= 0` で早期 return するため `current` が動かない。**拒否した delta の影響は「その後の正常な delta での回復量」で見ること**(タスク 6.2 の「待機の計測が戻らないことも見る」と同じ形)。
+- **変異で検証した**(タスク 6.3、`tests/player` 105 ケースに対して実測): `Health.new()` へ既定値(100 / 3.0 / 20.0)を直書き → 11 件失敗、`health.tick(delta)` の呼び出しを削除 → 1 件失敗、`died.emit()` を削除 → 2 件失敗、`tick` を `delta` ガードより前へ移動 → 2 件失敗。しきい値の跨ぎは、待機を設定 0.5 / 既定 3.0 に対して経過 1.0 秒で判定し、回復量を設定 8.0 / 既定 20.0 に対して 8 フレーム(4 点 / 10 点)で判定して作った。
+- **`Player.died` の発火回数も `Array` へ控えて数える**(タスク 6.3)。`Player` は `Object` なので `assert_signal` を使えるが、`is_not_emitted()` は引数まで一致したときだけ発火と見なす落とし穴があり(タスク 5.3 の申し送り)、「ちょうど 1 回」の厳密比較には `Array` のほうが素直である。`Health`(`RefCounted`)側と形も揃う。
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。

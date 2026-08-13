@@ -7,6 +7,7 @@ extends CharacterBody2D
 ## 描画フレームの delta を使い、同じ入力でも変位が定まらないため、位置の更新は
 ## `_physics_process` の中だけで行う。
 
+signal died
 signal fired(direction: Vector2i, is_secondary: bool)
 
 const MISSING_STATS_ERROR: String = "Player: stats が設定されていない。既定値の PlayerStats を使う"
@@ -20,6 +21,9 @@ const MISSING_PROJECTILE_SCENE_ERROR: String = (
 
 ## 弾のシーン。値の出どころを 1 箇所にするため、参照はインスペクタから与える
 @export var projectile_scene: PackedScene
+
+## 体力。待機時間の計測と回復の進行は `Health` が持ち、`Player` は経過時間を自分で持たない
+var health: Health
 
 var facing: int = 1
 
@@ -36,6 +40,7 @@ func _ready() -> void:
 		push_error(MISSING_STATS_ERROR)
 		stats = PlayerStats.new()
 	_report_non_positive_stats()
+	_ensure_health()
 
 
 func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
@@ -43,6 +48,9 @@ func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
 	if delta <= 0.0:
 		push_error(INVALID_DELTA_ERROR)
 		return
+
+	_ensure_health()
+	health.tick(delta)
 
 	velocity.x = cmd.move_x * stats.move_speed
 
@@ -64,6 +72,14 @@ func apply_command(cmd: PlayerCommand, delta: float, is_on_floor: bool) -> void:
 	_update_weapons(cmd, direction, delta)
 
 
+## 体力を `amount` だけ減らす。減らし方と枯渇の判定は `Health` に委ねる。
+##
+## 事前条件: `amount` は正。0 以下なら `Health` が `push_error` を出して状態を変えない
+func take_damage(amount: int) -> void:
+	_ensure_health()
+	health.take_damage(amount)
+
+
 func _physics_process(delta: float) -> void:
 	var cmd: PlayerCommand = input_source.call()
 	apply_command(cmd, delta, is_on_floor())
@@ -80,6 +96,20 @@ func _update_weapons(cmd: PlayerCommand, direction: Vector2i, delta: float) -> v
 
 	if _secondary_weapon.update(cmd.secondary_held, delta):
 		_spawn_projectile(direction, stats.secondary_bullet_speed, stats.secondary_damage, true)
+
+
+# `_ready()` からも呼ぶが、ここでも作れるようにする: `apply_command()` と `take_damage()` は
+# ツリーへ載せずに呼べる契約であり、`_ready()` を通らない経路で health が null になる
+func _ensure_health() -> void:
+	if health != null:
+		return
+	health = Health.new(stats.max_health, stats.regen_delay, stats.regen_per_second)
+	# エッジの検出は Health が持つ。Player は中継するだけで保持状態を持たない
+	health.depleted.connect(_on_health_depleted)
+
+
+func _on_health_depleted() -> void:
+	died.emit()
 
 
 # 武器を `_ready()` で作らない: `apply_command()` はツリーへ載せずに呼べる契約であり、
