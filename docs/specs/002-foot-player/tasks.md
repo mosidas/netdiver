@@ -269,7 +269,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §6.2
     - 実装の要点: 値は `foot-enemies`(unit #3)が参照する上限であり、本単位のコードからは使われない。テストは定数の値そのものを固定する
     - 検証コマンド: `make test TESTS=res://tests/weapon`
-  - [ ] 8.2 `PlayerStats` の値が実装のコードへ直書きされていないことを確認し、見つかったものを `stats` 経由の参照へ置き換える
+  - [x] 8.2 `PlayerStats` の値が実装のコードへ直書きされていないことを確認し、見つかったものを `stats` 経由の参照へ置き換える
     _Requirements: 10.2_
     _Boundary: PlayerStats_
     _Depends: 5.3, 6.3, 7.3_
@@ -377,4 +377,10 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`dev_stage.tscn` の `DamageZone` は `position = (112, 76)`**(タスク 7.2)。64×32px なので x が 80〜144、y が 60〜92 を覆い、床の上面(y=92)に接する。プレイヤーの開始位置 (48, 60) からは右へ歩くと入る。**タスク 7.4 の目視確認はこの位置に留まって体力を 0 にする。**
 - **`died` の接続は `dev_stage.tscn` の `[connection]` で行い、`_ready()` では繋がない**(タスク 7.3、spec が定めていない決定)。シーンの宣言に置くと `instantiate()` した時点で接続が存在し、テストがツリーへ載せずに `get_signal_connection_list("died")` を読める。`_ready()` で繋ぐと `add_child()` が要り、`Player._physics_process` が走って初期位置を検証する別のテストと干渉する。
 - **`DevStage` はスクリプト変数を 1 つも持たない**(タスク 7.3)。テストは `get_property_list()` の `PROPERTY_USAGE_SCRIPT_VARIABLE` が 0 件であることと、子ノードが地形 6・`DamageZone`・`Player` の許可リストに収まることの 2 つで再開位置の不在を示している。**`DevStage` に変数や子ノードを足すとこのテストが落ちる**(意図した追加なら許可リストを更新すること)。
+- **`CombatLimits` の値は本単位のコードから参照しない**(タスク 8.1)。`foot-enemies`(unit #3)が超えてはならない上限であり、定数の値そのものをテストで固定している。加えて「上限の速さの弾が画面の半分(160px)を進む時間 > 回避に要する 0.46 秒」を 1 件置き、値を緩める変異を捕らえる。**`ENEMY_BULLET_MAX_SPEED` の値は `PlayerStats.move_speed`(100.0)に依存して算出されている**ため、移動速度を変えるならこの上限も再計算すること。
+- **タスク 8.2 の機械検査は直書きを 1 件も検出しなかった**(小数 10 種の grep、`src` 全体、`player_stats.gd` を除外して 0 件)。置き換えた箇所は無い。除外した無関係な小数リテラルも無い。整数の 3 個(100 / 10 / 50)も別途 `src` 全体を grep し、`combat_limits.gd` の算出根拠のコメント中の「100 px/s」1 件だけで、実行されるコードには無いことを確認した。
+- **`DamageZone.DAMAGE_INTERVAL = 1.0` と `damage = 15` は `PlayerStats` の値ではない**(タスク 8.2 の判定)。周期 1 秒は spec §5.8・要件 9.3 が `DamageZone` の契約として定めた値であり、ダメージ量は `DamageZone` 自身の `@export` である。`PlayerStats` にこれらに対応する項目は無いため、集約の対象外である(1.0 が検査対象の 10 種に含まれないのは偶然ではない)。
+- **`src/stage/` の 2 本もタスク 8.2 の検査に掛かっている**(タスク 8.2)。tasks.md の「対象ファイル」は `src/player/` と `src/weapon/` しか挙げていないが、検証コマンドは `src` 全体を走査するため `dev_stage.gd`・`damage_zone.gd` も範囲に入る。どちらも `PlayerStats` の値を持たない。
+- **grep は「値が `stats` から流れていること」を示さない**(タスク 8.2)。直書きが無いことの裏取りとして `player.gd` の 14 項目すべてが `stats.<項目名>` 経由で読まれていることを目視で確認した(`move_speed`・`gravity`・`jump_speed`・`max_health`・`regen_delay`・`regen_per_second`・`primary_interval`・`primary_damage`・`primary_bullet_speed`・`secondary_charge_time`・`secondary_cooldown`・`secondary_damage`・`secondary_bullet_speed`・`bullet_max_distance`)。実質の担保はタスク 5.3・6.3 の変異検証(既定値の直書きで 11 件失敗)にある。
+- **`charge_time` が 0 のときの退化(タスク 5.2 の申し送り)は 8.2 では解消していない**。直書きの問題ではなく `Player._ready()` の検査が `push_error` を出すだけで値を補正しないことに由来する。要件 10.2 の範囲外であり、契約(§6.1 の不変条件は「0 以下が設定された場合は `push_error`」までしか定めない)も変えていない。**補正が要るなら spec の変更を伴う。**
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
