@@ -252,7 +252,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §5.7、§7 Requirement 7
     - 実装の要点: 7.1 はシーンを読み込んで `player.get_signal_connection_list("died")` の件数と接続先が `DevStage` であることで検証する(`reload_current_scene()` 自体はここでは呼ばせない)。7.3 の主たる確認は、読み込んだ `DevStage` が再開位置を保持する変数・子ノードを持たないこと(`get_property_list()` と子ノードの走査)をテストで示すことである。下の grep は補助であり、英語 3 語に当たらない命名を見落とすため単独の根拠にしない
     - 検証コマンド: `make test TESTS=res://tests/stage`、`grep -niE 'checkpoint|respawn|spawn_point' src/stage/dev_stage.gd src/stage/dev_stage.tscn > /tmp/retry.txt; test ! -s /tmp/retry.txt && echo OK`(補助)
-  - [ ] 7.4 リトライを実行時に目視で確認する(自動テストでは検証しない)
+  - [x] 7.4 リトライを実行時に目視で確認する(自動テストでは検証しない)
     _Requirements: 7.2_
     _Boundary: DevStage_
     _Depends: 7.3_
@@ -383,4 +383,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`src/stage/` の 2 本もタスク 8.2 の検査に掛かっている**(タスク 8.2)。tasks.md の「対象ファイル」は `src/player/` と `src/weapon/` しか挙げていないが、検証コマンドは `src` 全体を走査するため `dev_stage.gd`・`damage_zone.gd` も範囲に入る。どちらも `PlayerStats` の値を持たない。
 - **grep は「値が `stats` から流れていること」を示さない**(タスク 8.2)。直書きが無いことの裏取りとして `player.gd` の 14 項目すべてが `stats.<項目名>` 経由で読まれていることを目視で確認した(`move_speed`・`gravity`・`jump_speed`・`max_health`・`regen_delay`・`regen_per_second`・`primary_interval`・`primary_damage`・`primary_bullet_speed`・`secondary_charge_time`・`secondary_cooldown`・`secondary_damage`・`secondary_bullet_speed`・`bullet_max_distance`)。実質の担保はタスク 5.3・6.3 の変異検証(既定値の直書きで 11 件失敗)にある。
 - **`charge_time` が 0 のときの退化(タスク 5.2 の申し送り)は 8.2 では解消していない**。直書きの問題ではなく `Player._ready()` の検査が `push_error` を出すだけで値を補正しないことに由来する。要件 10.2 の範囲外であり、契約(§6.1 の不変条件は「0 以下が設定された場合は `push_error`」までしか定めない)も変えていない。**補正が要るなら spec の変更を伴う。**
+- **リトライの目視確認は期待どおりに動作した**(タスク 7.4、2026-08-13 に人手で実施)。環境は Godot 4.7.1.stable.official(`Metal 4.0 - Forward+`、Apple M2、macOS)、起動は worktree のルートで `godot --path . res://src/stage/dev_stage.tscn`。右へ歩いて赤い半透明の矩形(`DamageZone`)へ入りそのまま留まると、体力が 0 になった時点でシーンが読み直され、プレイヤーが左端の初期位置へ戻って落下し直し、体力も `max_health` へ戻った(要件 7.2)。実行中に `push_error` などのエラー出力は出なかった。**この 1 件だけが `make test` に現れない確認であり、`DevStage` の再読込の経路を変えたら再実施が要る。**
 - **`docs/specs/002-foot-player/tasks.md` の末尾に混入していたツールのマークアップ(`</content>` と `</invoke>` の 2 行)を削除した**(タスク 6.1)。commit `6e7ac9e` までに紛れ込んでいたもので、仕様・タスクの内容ではない。
