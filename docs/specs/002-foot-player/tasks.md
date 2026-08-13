@@ -262,7 +262,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 検証コマンド: `godot res://src/stage/dev_stage.tscn`(目視。headless では確認できない)
 
 - [ ] 8. 敵の設計の上限・数値の集約・文書の更新
-  - [ ] 8.1 (P) `CombatLimits` を新規作成し、敵弾の弾速の上限と予備動作の下限を定数として定義する
+  - [x] 8.1 (P) `CombatLimits` を新規作成し、敵弾の弾速の上限と予備動作の下限を定数として定義する
     _Requirements: 10.4_
     _Boundary: CombatLimits_
     - 対象ファイル: `src/weapon/combat_limits.gd`(新規), `tests/weapon/combat_limits_test.gd`(新規)
