@@ -6,6 +6,8 @@ extends Area2D
 ## 位置の更新は `_physics_process` の中だけで行う。物理フレームの外で位置を進めると
 ## Godot が描画フレームの delta を使い、同じ入力でも変位が定まらない。
 
+const TAKE_DAMAGE_METHOD: StringName = &"take_damage"
+
 var damage: int = 0
 
 ## 位置を進めた物理フレームの数。
@@ -19,6 +21,12 @@ var frames_moved: int = 0
 var _velocity: Vector2 = Vector2.ZERO
 var _max_distance: float = 0.0
 var _launch_position: Vector2 = Vector2.ZERO
+
+
+func _ready() -> void:
+	# `area_entered` では地形もプレイヤーも拾えない: どちらも `PhysicsBody2D` であって
+	# `Area2D` ではない
+	body_entered.connect(_on_body_entered)
 
 
 ## 弾を発射する。射程はこの呼び出しの時点の位置から測る。
@@ -42,6 +50,15 @@ func _physics_process(delta: float) -> void:
 	position += _velocity * delta
 	if position.distance_to(_launch_position) > _max_distance:
 		_release()
+
+
+func _on_body_entered(body: Node2D) -> void:
+	# 相手を型で見ない: `Player` へ静的に依存させると、単位を跨ぐ結び付きができる。
+	# 触れた相手のうち `take_damage()` を持たないもの(地形)はダメージの対象ではない
+	if body.has_method(TAKE_DAMAGE_METHOD):
+		# 解放より先に与える: 後にすると、受け手が弾の状態を見て振る舞いを決められない
+		body.call(TAKE_DAMAGE_METHOD, damage)
+	_release()
 
 
 func _release() -> void:
