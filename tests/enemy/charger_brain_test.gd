@@ -35,11 +35,52 @@ const LONG_ATTACK_DURATION: float = 1.0
 const LONG_RECOVER_TIME: float = 2.0
 const LONG_ATTACK_SPEED: float = 16.0
 
+# 事前条件の外にある値。境界(delta = 0・距離 = 0)を両方含める
+const ZERO_DELTA: float = 0.0
+const NEGATIVE_DELTA: float = -0.125
+const ZERO_DISTANCE: float = 0.0
+const NEGATIVE_DISTANCE: float = -1.0
+
+# 有限だが桁が大きい距離。標的の不在(INF)の判定を巨大な有限値のしきい値へ置き換える実装は、
+# この距離で突進へ入らず落ちる
+const HUGE_FINITE_DISTANCE: float = 1.0e30
+
+# 実装の文言を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const INVALID_DELTA_ERROR_FORMAT: String = (
+	"ChargerBrain.update(): delta は正でなければならない(現在値: %s)。状態を変えずに返る"
+)
+const NEGATIVE_DISTANCE_ERROR_FORMAT: String = (
+	"ChargerBrain.update(): distance_to_target は 0 以上でなければならない(現在値: %s)。"
+	+ "状態を変えずに返る"
+)
+
 # 到達できる状態の名前。_brain_in_state() が組み立てる
 const IDLE: String = "idle"
 const TELEGRAPH: String = "telegraph"
 const CHARGE: String = "charge"
 const RECOVER: String = "recover"
+
+const REACHABLE_STATES: Array[String] = [IDLE, TELEGRAPH, CHARGE, RECOVER]
+
+# 満了より前に与える距離。到達距離の内外・境界の 0・標的の不在(INF)を跨ぐ。
+# 合計の delta(SMALL_DELTA × 4 = 0.125)はどの滞在時間より短い
+const SWING_DISTANCES: Array[float] = [FAR_DISTANCE, NEAR_DISTANCE, INF, ZERO_DISTANCE]
+
+# 滞在中に距離を振っても満了まで遷移しないことを見る表。
+# 各行は [状態, その状態の enum, 滞在時間, 満了後の状態]
+const SWING_TABLE: Array = [
+	[TELEGRAPH, EnemyState.State.TELEGRAPH, TELEGRAPH_TIME, EnemyState.State.CHARGE],
+	[CHARGE, EnemyState.State.CHARGE, ATTACK_DURATION, EnemyState.State.RECOVER],
+	[RECOVER, EnemyState.State.RECOVER, RECOVER_TIME, EnemyState.State.IDLE],
+]
+
+# 事前条件に反する引数と、そのとき出る文言。
+# 各行は [delta, distance_to_target, 期待する文言]
+const INVALID_ARGUMENT_TABLE: Array = [
+	[ZERO_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % ZERO_DELTA],
+	[NEGATIVE_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA],
+	[FRAME_DELTA, NEGATIVE_DISTANCE, NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE],
+]
 
 # 到達できる状態 × 距離の総当たり。条件を広げる変異・分岐を入れ替える変異が片側だけの
 # 検証では素通りするため、出力を厳密比較の表で押さえる。
@@ -367,11 +408,205 @@ func test_a_longer_attack_duration_widens_the_attack_reach() -> void:
 	assert_int(long_brain.state).is_equal(EnemyState.State.TELEGRAPH)
 
 
+func test_a_zero_delta_is_rejected() -> void:
+	# is_attack_active が真の状態で見る: 偽の状態だけでは、拒否のときに偽へ倒す実装が素通りする
+	var brain: ChargerBrain = _brain_in_state(CHARGE)
+	var expected: String = INVALID_DELTA_ERROR_FORMAT % ZERO_DELTA
+
+	await assert_error(
+		func() -> void: brain.update(ZERO_DELTA, NEAR_DISTANCE)
+	).is_push_error(expected)
+
+	var actual: Array = [brain.state, brain.is_attack_active]
+	assert_array(actual).is_equal([EnemyState.State.CHARGE, true])
+
+
+func test_a_negative_delta_is_rejected() -> void:
+	var brain: ChargerBrain = _brain_in_state(CHARGE)
+	var expected: String = INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA
+
+	await assert_error(
+		func() -> void: brain.update(NEGATIVE_DELTA, NEAR_DISTANCE)
+	).is_push_error(expected)
+
+	var actual: Array = [brain.state, brain.is_attack_active]
+	assert_array(actual).is_equal([EnemyState.State.CHARGE, true])
+
+
+func test_a_negative_distance_is_rejected() -> void:
+	var brain: ChargerBrain = _brain_in_state(CHARGE)
+	var expected: String = NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE
+
+	await assert_error(
+		func() -> void: brain.update(FRAME_DELTA, NEGATIVE_DISTANCE)
+	).is_push_error(expected)
+
+	var actual: Array = [brain.state, brain.is_attack_active]
+	assert_array(actual).is_equal([EnemyState.State.CHARGE, true])
+
+
+func test_invalid_arguments_are_rejected_in_every_reachable_state() -> void:
+	for state: String in REACHABLE_STATES:
+		for row: Array in INVALID_ARGUMENT_TABLE:
+			var brain: ChargerBrain = _brain_in_state(state)
+			var before: Array = [brain.state, brain.is_attack_active]
+			var context: String = "state=%s delta=%s distance=%s" % [state, row[0], row[1]]
+
+			await (
+				assert_error(func() -> void: brain.update(row[0], row[1]))
+				. append_failure_message(context)
+				. is_push_error(row[2])
+			)
+
+			var actual: Array = [brain.state, brain.is_attack_active]
+			assert_array(actual).append_failure_message(context).is_equal(before)
+
+
+# ガードを満了の判定より後ろに置いた実装は、拒否したフレームの delta を滞在時間へ数えてしまう。
+# 距離の異常と delta の異常でずれる向きが逆(足す / 引く)なので、両方に個別のケースを割り当てる
+func test_a_rejected_distance_does_not_count_toward_the_telegraph() -> void:
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	var expected: String = NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE
+
+	await assert_error(
+		func() -> void: brain.update(TELEGRAPH_TIME, NEGATIVE_DISTANCE)
+	).is_push_error(expected)
+	brain.update(SMALL_DELTA, NEAR_DISTANCE)
+
+	assert_int(brain.state).is_equal(EnemyState.State.TELEGRAPH)
+
+
+func test_a_rejected_delta_does_not_count_toward_the_telegraph() -> void:
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
+	var expected: String = INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA
+
+	await assert_error(
+		func() -> void: brain.update(NEGATIVE_DELTA, NEAR_DISTANCE)
+	).is_push_error(expected)
+	brain.update(SMALL_DELTA, NEAR_DISTANCE)
+
+	assert_int(brain.state).is_equal(EnemyState.State.CHARGE)
+
+
+func test_a_zero_distance_is_accepted_and_starts_the_telegraph() -> void:
+	# 事前条件は「0 以上」であり 0 は正当な入力である。距離の検査を 0 以下へ広げる変異はここで落ちる
+	var brain: ChargerBrain = _new_brain()
+
+	await assert_error(func() -> void: brain.update(FRAME_DELTA, ZERO_DISTANCE)).is_success()
+
+	assert_int(brain.state).is_equal(EnemyState.State.TELEGRAPH)
+
+
+func test_the_distance_does_not_cut_a_state_short() -> void:
+	for row: Array in SWING_TABLE:
+		var state: String = row[0]
+		var state_value: int = row[1]
+		var duration: float = row[2]
+		var next_state: int = row[3]
+		var brain: ChargerBrain = _brain_in_state(state)
+		var observed: Array = []
+		var expected: Array = []
+
+		for distance: float in SWING_DISTANCES:
+			brain.update(SMALL_DELTA, distance)
+			observed.append(brain.state)
+			expected.append(state_value)
+
+		# 満了させる。満了のフレームの距離は到達距離の内側に取る: 標的の不在の分岐と混ぜない
+		brain.update(duration, NEAR_DISTANCE)
+		brain.update(SMALL_DELTA, NEAR_DISTANCE)
+		observed.append(brain.state)
+		expected.append(next_state)
+
+		assert_array(observed).append_failure_message("state=%s" % state).is_equal(expected)
+
+
+func test_the_brain_stays_idle_while_the_target_is_absent() -> void:
+	var brain: ChargerBrain = _new_brain()
+	# 複数行の lambda を呼び出しの引数へ直接書けない(閉じ括弧の字下げが戻せない)ため変数へ置く
+	var run_frames: Callable = func() -> void:
+		for _frame: int in CYCLE_FRAME_COUNT:
+			brain.update(FRAME_DELTA, INF)
+
+	await assert_error(run_frames).is_success()
+
+	var actual: Array = [brain.state, brain.is_attack_active]
+	assert_array(actual).is_equal([EnemyState.State.IDLE, false])
+
+
+func test_the_telegraph_ends_in_the_recover_when_the_target_is_absent() -> void:
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
+
+	brain.update(SMALL_DELTA, INF)
+
+	assert_int(brain.state).is_equal(EnemyState.State.RECOVER)
+	assert_bool(brain.is_attack_active).is_false()
+
+
+# 満了時の分岐の両側。片側だけでは、分岐そのものを消した実装が残る側で素通りする。
+# 有限の側は桁の大きい距離でも見る: 不在の判定をしきい値(距離が巨大なら不在と見なす)へ
+# 置き換えた実装は、遠いだけで標的のある局面を取りやめてしまう
+func test_the_expiry_of_the_telegraph_branches_on_the_presence_of_the_target() -> void:
+	var present_brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	var far_present_brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	var absent_brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	for brain: ChargerBrain in [present_brain, far_present_brain, absent_brain]:
+		brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
+
+	present_brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	far_present_brain.update(SMALL_DELTA, HUGE_FINITE_DISTANCE)
+	absent_brain.update(SMALL_DELTA, INF)
+
+	var actual: Array = [
+		present_brain.state,
+		present_brain.is_attack_active,
+		far_present_brain.state,
+		far_present_brain.is_attack_active,
+		absent_brain.state,
+		absent_brain.is_attack_active,
+	]
+	var expected: Array = [
+		EnemyState.State.CHARGE,
+		true,
+		EnemyState.State.CHARGE,
+		true,
+		EnemyState.State.RECOVER,
+		false,
+	]
+	assert_array(actual).is_equal(expected)
+
+
+# INF は事前条件の「0 以上」を満たす。異常な引数(push_error を出す)との非対称を固定する
+func test_an_absent_target_pushes_no_error() -> void:
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
+
+	await assert_error(func() -> void: brain.update(SMALL_DELTA, INF)).is_success()
+
+	assert_int(brain.state).is_equal(EnemyState.State.RECOVER)
+
+
+func test_the_cancelled_charge_recovers_for_the_full_recover_time() -> void:
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+	brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
+	brain.update(SMALL_DELTA, INF)
+
+	brain.update(NEARLY_RECOVER_TIME, INF)
+	brain.update(SMALL_DELTA, INF)
+	var before_expiry: int = brain.state
+	brain.update(SMALL_DELTA, INF)
+
+	assert_array([before_expiry, brain.state]).is_equal(
+		[EnemyState.State.RECOVER, EnemyState.State.IDLE]
+	)
+
+
 func test_every_reachable_state_is_one_of_the_shared_enum_values() -> void:
-	var reachable: Array[String] = [IDLE, TELEGRAPH, CHARGE, RECOVER]
 	var names: Array[String] = []
 
-	for state: String in reachable:
+	for state: String in REACHABLE_STATES:
 		names.append(_state_name(_brain_in_state(state).state))
 
 	assert_array(names).is_equal(["IDLE", "TELEGRAPH", "CHARGE", "RECOVER"])
