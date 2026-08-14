@@ -200,7 +200,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 10.3 は `collision_layer` = 0、`collision_mask` = 2 の整数値を直接アサーションする
       - 相手の検出は `body_entered`(プレイヤーは `CharacterBody2D`)であり、`area_entered` ではない
     - 検証コマンド: `make test TESTS=res://tests/enemy`
-  - [ ] 3.5 撃破された後に `Attackbox` の `monitoring` を偽に保つ
+  - [x] 3.5 撃破された後に `Attackbox` の `monitoring` を偽に保つ
     _Requirements: 3.10_
     _Boundary: ChargerEnemy_
     _Depends: 3.4_
@@ -413,4 +413,10 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`Attackbox` の `damage` はシーンに既定値を書かず、`ChargerEnemy._ready()` が `stats.attack_damage` から代入する**(タスク 3.4)。テスト側の `EnemyStats` は `attack_damage` を既定の 15 と別の 23 にしてあり、シーンへ焼き込む変異・実装へ直書きする変異が 6 ケースで落ちる。**射撃型(タスク 5.3)の `attack_damage` も同じく `stats` 経由で流すこと。**
 - **`charger_enemy.tscn` の `ext_resource` に `uid=` を書いていない**(タスク 3.4)。既存の `.tscn` はいずれも `path=` だけで `uid=` を持たないため、記法を揃えた(Godot はパスで解決するため実害はない)。**Godot エディタでシーンを保存すると `uid=` が書き戻される**ため、その差分が出たときは記法の揺れであって意味の変更ではない。
 - **`Attackbox` の形状は本体の `RectangleShape2D`(16×16)を共有している**(タスク 3.4)。spec.md は攻撃判定の形状を定めていないが、§5.1 が本体・placeholder・`Hurtbox` を 16×16 に揃えており、突進の当たりだけ別の大きさにする根拠が無い。`[sub_resource type="RectangleShape2D"]` の共有は要件 8.7 の検査(`type="Resource"` の 0 件)に掛からない。
+- **物理フレームの中では `Area2D` の重なりの通知が `_physics_process` より先に走る**(タスク 3.5。レビューが実測)。Godot の `SceneTree` は `physics_process_internal` グループ(`Area2D` が `area_entered` / `body_entered` を flush する層)を通常の `physics_process` グループより**先に**通知し、`queue_free()` の反映(削除キューの flush)はさらにその後に来る。したがって `Hurtbox` の被弾で撃破されたフレームの並びは **`area_entered` → `take_damage()` → `defeated` → `_on_defeated()` → `disarm()` → `ChargerEnemy._physics_process()` → `_sync_attackbox()`** であり、**撃破された同じフレームの中で `_sync_attackbox()` がもう 1 回走る**。`ChargerEnemy._sync_attackbox()` の `if is_defeated: return` は到達しない防御では**なく**、これを外すと実フレームでフレーム末尾の `monitoring` が `true` へ戻る(実測: 撃破フレームの観測が `[is_defeated=true, monitoring=false]` から `[true, true]` へ変わる)。**「撃破・解放の直後に何かをしない」ことを実装する後続の場面(タスク 6.1)でも、`queue_free()` を呼んだフレームの残りで自分の `_physics_process` がもう 1 回走ることを前提に組むこと。**
+- **撃破を `_physics_process` の `is_defeated` の監視で検知すると 1 フレーム遅れる**(タスク 3.5)。上の順序により被弾は `_physics_process` より前に起きるため、監視で拾うと次のフレームまで攻撃判定が生きたままになる。`ChargerEnemy._ready()` で `defeated.connect(_on_defeated)` と自己接続する形を採った。変異(接続を削除して `_sync_attackbox()` の中で閉じる)は `test_the_attackbox_closes_in_the_frame_the_charger_is_defeated` が落とす。
+- **「同じ物理フレームのうちに」を固定しているのは `set_deferred` を弾くアサーションである**(タスク 3.5)。`Attackbox.disarm()` を `monitoring = false` から `set_deferred("monitoring", false)` へ変える変異は、`take_damage()` の直後に `await` を挟まず `monitoring` を読む 2 本のケースだけが落とす。**撃破・解放の直後の状態を見るテストでは `await` を入れないこと**(入れると `set_deferred` 相当の実装を素通りさせる)。順序そのものの固定はタスク 2.1 の申し送りどおり `is_queued_for_deletion()` で行う。
+- **タスク 3.4 のレビューが出した Minor(`_sync_attackbox()` を `super(delta)` の前へ移す変異をどのテストも落とさない)はタスク 3.5 で閉じた**。是正は実フレームで毎フレームの `[brain.state, monitoring]` を記録する観測ノード(`AttackboxObserver`)であり、この変異はこのケース 1 本だけが落とす。なお**観測ノードを敵より先にツリーへ載せても検出は失われない**(レビューが実測)。`state` と `monitoring` を同じスナップショットで読む限り 1 フレームのずれは読む位置によらず対の不整合として現れるためである。**同型の観測ノードを使う後続のケースでも、順序に頼らず「対の整合」で見ること。**
+- **`assert_array(...).contains([...])` は witness として有効である**(タスク 3.5。レビューが実測)。到達不能な値を期待に足すと落ちるため、列挙した状態が実際に観測されたことを示せている。状態が 1 つしか現れないと対の整合が自明に成立するため、**毎フレームの整合を見るテストには必ず「複数の状態を通った」ことの witness を付けること。**
+- **`Attackbox.disarm()` を経由するか `monitoring` を直接代入するかは等価変異である**(タスク 3.5)。開閉の口を 1 箇所へ寄せる設計上の選択であり、テストで区別できない。タスク 3.4 の申し送りと同じく、**等価変異をテストで固定しようとしないこと。**
 - **`get_parent()` が `null` になる経路は `area_entered` の受け手には存在しない**(タスク 2.4)。`_on_area_entered()` はシグナル経由でしか呼ばれず、そのときノードは必ずツリー上にあるため、`owner_node == null` の節を落とす変異は等価変異でありテストで捕らえられない(レビューが実測。変異 22 種のうちこの 1 種だけが未検出)。ガードは防御として残してあるが、**到達しない防御をテストで固定しようとしないこと**。

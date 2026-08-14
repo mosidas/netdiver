@@ -30,6 +30,14 @@ func arm() -> void:
 	_has_dealt = false
 
 
+## 攻撃判定を閉じる。所有者が撃破されたときに呼ぶ。
+##
+## `arm()` と対にしてここへ置く: 判定を開くのも閉じるのもこの領域の関心であり、所有者に
+## `monitoring` を直接書かせると開閉の口が 2 箇所に分かれる
+func disarm() -> void:
+	monitoring = false
+
+
 func _on_body_entered(body: Node2D) -> void:
 	if _has_dealt:
 		return

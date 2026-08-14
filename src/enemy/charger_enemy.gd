@@ -25,6 +25,10 @@ func _ready() -> void:
 	_attackbox = get_node(ATTACKBOX_NODE)
 	# シーンへ焼き込まず、ここで手触りの数値から写す
 	_attackbox.damage = stats.attack_damage
+	# 自分の撃破をシグナルで受け取る: 次の `_physics_process` を待つと、撃破されたフレームの
+	# 残りで攻撃判定が生きたままになる。解放はフレームの終わりであり、その間に触れた相手へ
+	# ダメージが入る
+	defeated.connect(_on_defeated)
 
 
 func _physics_process(delta: float) -> void:
@@ -64,10 +68,22 @@ func _update_velocity(delta: float) -> void:
 # 落とさないと 2 回目以降の突進でダメージが入らない。`monitoring` を縁の判定に使うのは、
 # 攻撃判定が有効だったかどうかを知っているのが `Attackbox` 自身だからである
 func _sync_attackbox() -> void:
+	# 撃破時の停止を `brain` との一致より優先する(要件 3.10 が 3.5 を支配する)。代入の
+	# 後ろで偽へ戻さず早期に返るのは、`arm()` を縁の内側に閉じたままにするためである:
+	# 後ろで戻すと `is_attack_active` が真のまま毎フレーム「偽→真の縁」と誤認する
+	if is_defeated:
+		return
+
 	var is_active: bool = brain.is_attack_active
 	if is_active and not _attackbox.monitoring:
 		_attackbox.arm()
 	_attackbox.monitoring = is_active
+
+
+# 撃破された時点で攻撃判定を閉じる。`brain` は止めない: 状態遷移は解放までの残りのフレームで
+# 参照されうる公開点であり、撃破の有無で意味を変えない
+func _on_defeated(_kind: int) -> void:
+	_attackbox.disarm()
 
 
 # 標的の側(-1 / 0 / +1)。不在なら 0 を返す: 向きの決まらないフレームで水平に動かさない

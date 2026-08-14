@@ -96,9 +96,24 @@ class RecordingBody:
 		amounts.append(amount)
 
 
+## 毎物理フレームの `[brain.state, monitoring]` を記録するだけのノード。敵より後にツリーへ
+## 載せて、敵が写像を終えた後の対を読む: 同期で駆動するケースは呼ぶ順をテスト側が決めており、
+## 実装の中の順序(`super(delta)` と `_sync_attackbox()` のどちらが先か)を観測していない
+class AttackboxObserver:
+	extends Node
+
+	var enemy: ChargerEnemy
+	var attackbox: Attackbox
+	var pairs: Array = []
+
+	func _physics_process(_delta: float) -> void:
+		pairs.append([enemy.brain.state, attackbox.monitoring])
+
+
 # スイートのメンバに抱える: ローカル変数だけで持つと、毎フレーム参照するスタブへの参照が
 # 切れる事故を招く
 var _moving_target: MovingTarget
+var _observer: AttackboxObserver
 
 
 ## テスト用の数値。シーンが指す `charger_stats.tres` は書き換えない: 1 個を全個体で共有する
@@ -575,3 +590,81 @@ func test_the_charge_damages_a_player_body_it_runs_into() -> void:
 	assert_int(enemy.brain.state).is_equal(EnemyState.State.RECOVER)
 	assert_bool(_attackbox_of(enemy).monitoring).is_false()
 	assert_array(body.amounts).is_equal([ATTACK_DAMAGE])
+
+
+func test_the_attackbox_matches_the_brain_on_every_physics_frame() -> void:
+	# 遷移したフレームでも一致していることの観測点。同期で駆動するケースは `_update_velocity`
+	# → `_sync_attackbox` の順をテスト側が決めているため、実装の中で切り替えを `super(delta)`
+	# の前へ移す変異(`monitoring` が 1 フレーム遅れ、硬直の 1 フレーム目に判定が生きる)を
+	# 観測できない
+	var enemy: ChargerEnemy = auto_free(CHARGER_SCENE.instantiate())
+	var stats: EnemyStats = _create_stats()
+	stats.gravity = FLOATING_GRAVITY
+	stats.recover_time = LONG_RECOVER_TIME
+	enemy.stats = stats
+	enemy.position = SPAWN_POSITION
+	add_child(enemy)
+	var target: Node2D = auto_free(Node2D.new())
+	target.position = SPAWN_POSITION + Vector2(CHARGE_GAP, 0.0)
+	add_child(target)
+	enemy.target = target
+	# 観測ノードは敵より後に載せる(木の順に走るため、敵が写像を終えた後の対を読む)。ただし
+	# 検出は順序に依らない: 対を同じスナップショットで読む限り、1 フレームのずれは読む位置に
+	# よらず不整合として現れる(レビューが先に載せた場合でも落ちることを実測)
+	_observer = auto_free(AttackboxObserver.new())
+	_observer.enemy = enemy
+	_observer.attackbox = _attackbox_of(enemy)
+	add_child(_observer)
+
+	await await_millis(CHARGE_WAIT_MILLIS)
+
+	# 予備動作 → 突進 → 硬直まで進んでいることを witness にする: 状態が 1 つしか現れないと、
+	# 対の整合が自明に成立して変異を落とさない
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.RECOVER)
+	var observed_states: Array = []
+	var mismatched: Array = []
+	for pair: Array in _observer.pairs:
+		if not observed_states.has(pair[0]):
+			observed_states.append(pair[0])
+		if pair[1] != (pair[0] == EnemyState.State.CHARGE):
+			mismatched.append(pair)
+	assert_array(observed_states).contains(
+		[
+			EnemyState.State.TELEGRAPH,
+			EnemyState.State.CHARGE,
+			EnemyState.State.RECOVER,
+		]
+	)
+	assert_array(mismatched).is_empty()
+
+
+func test_the_attackbox_closes_in_the_frame_the_charger_is_defeated() -> void:
+	# 3.5 と優先順位が逆転する分岐である。`is_attack_active` が真のまま撃破される状況を作り、
+	# 解放(フレームの終わり)を待つ前に読む
+	var enemy: ChargerEnemy = _create_driven_charger()
+	var attackbox: Attackbox = _attackbox_of(enemy)
+	_advance_into_the_charge(enemy)
+	assert_bool(attackbox.monitoring).is_true()
+
+	enemy.take_damage(enemy.hp)
+
+	# 解放より先に閉じていることを `is_queued_for_deletion()` で固定する: `is_instance_valid()`
+	# は `queue_free()` 済みでも真を返すため、順序を固定できない(タスク 2.1 の申し送り)
+	assert_bool(enemy.is_defeated).is_true()
+	assert_bool(enemy.is_queued_for_deletion()).is_true()
+	assert_bool(enemy.brain.is_attack_active).is_true()
+	assert_bool(attackbox.monitoring).is_false()
+
+
+func test_the_sync_does_not_reopen_the_attackbox_after_the_charger_is_defeated() -> void:
+	# 「偽に**保つ**」の側である。撃破の瞬間に閉じるだけの実装は、次の写像で `brain` との
+	# 一致へ戻してしまう
+	var enemy: ChargerEnemy = _create_driven_charger()
+	var attackbox: Attackbox = _attackbox_of(enemy)
+	_advance_into_the_charge(enemy)
+	enemy.take_damage(enemy.hp)
+
+	_step(enemy)
+
+	assert_bool(enemy.brain.is_attack_active).is_true()
+	assert_bool(attackbox.monitoring).is_false()
