@@ -3,6 +3,7 @@ extends GdUnitTestSuite
 # `Enemy` 単体のシーンは無い。衝突形状を持つノードでしか接地を確かめられないため、基底の
 # 物理の器として突進型のシーンを使う
 const CHARGER_SCENE: PackedScene = preload("res://src/enemy/charger_enemy.tscn")
+const SHOOTER_SCENE: PackedScene = preload("res://src/enemy/shooter_enemy.tscn")
 const ENEMY_SOURCE_PATH: String = "res://src/enemy/enemy.gd"
 
 const DELTA: float = 1.0 / 60.0
@@ -280,6 +281,17 @@ func test_a_bare_enemy_returns_the_charger_kind() -> void:
 	var enemy: Enemy = _create_enemy()
 
 	assert_int(enemy.kind()).is_equal(EnemyKind.Kind.CHARGER)
+
+
+func test_the_two_enemy_scenes_return_their_own_kind() -> void:
+	# 2 種を並べて見る: 片方だけを見ると、射撃型の `kind()` を基底の実装のまま(CHARGER を
+	# 返す)にする変異が突進型のケースで緑になる。撃破の受け手は種別で分岐する
+	var charger: ChargerEnemy = auto_free(CHARGER_SCENE.instantiate())
+	var shooter: ShooterEnemy = auto_free(SHOOTER_SCENE.instantiate())
+
+	assert_array([charger.kind(), shooter.kind()]).is_equal(
+		[EnemyKind.Kind.CHARGER, EnemyKind.Kind.SHOOTER]
+	)
 
 
 func test_ready_falls_back_to_the_default_stats_when_stats_is_missing() -> void:
