@@ -38,6 +38,38 @@ const LONG_TELEGRAPH_TIME: float = 1.0
 const LONG_RECOVER_TIME: float = 2.0
 const LONG_DETECT_RANGE: float = 12.0
 
+# 事前条件を破る引数。0 と負値の両方を置く
+const ZERO_DELTA: float = 0.0
+const NEGATIVE_DELTA: float = -FRAME_DELTA
+const NEGATIVE_DISTANCE: float = -1.0
+# 0 のすぐ外側(-2^-20)。負値が -1.0 の 1 つだけだと、距離の検査を
+# `< -0.0001` のようなしきい値へ緩める実装と、報告する値を定数 -1.0 に固定する実装が
+# どちらも素通りする
+const SMALLEST_NEGATIVE_DISTANCE: float = -1.0 / 1048576.0
+# 事前条件を満たす最小の delta。ガードが正の側へ広がる実装はここで落ちる
+const SMALLEST_DELTA: float = 1.0 / 1048576.0
+
+# 実装の定数を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const INVALID_DELTA_ERROR_FORMAT: String = (
+	"ShooterBrain.update(): delta は正でなければならない(現在値: %s)。状態を変えずに偽を返す"
+)
+const NEGATIVE_DISTANCE_ERROR_FORMAT: String = (
+	"ShooterBrain.update(): distance_to_target は 0 以上でなければならない(現在値: %s)。"
+	+ "状態を変えずに偽を返す"
+)
+
+# 到達できる状態すべてに与える異常な引数の表。各行は [delta, 距離, 期待する文言]
+const INVALID_ARGUMENT_TABLE: Array = [
+	[ZERO_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % ZERO_DELTA],
+	[NEGATIVE_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA],
+	[FRAME_DELTA, NEGATIVE_DISTANCE, NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE],
+	[
+		FRAME_DELTA,
+		SMALLEST_NEGATIVE_DISTANCE,
+		NEGATIVE_DISTANCE_ERROR_FORMAT % SMALLEST_NEGATIVE_DISTANCE,
+	],
+]
+
 # 到達できる状態の名前。_brain_in_state() が組み立てる
 const IDLE: String = "idle"
 const TELEGRAPH: String = "telegraph"
@@ -141,6 +173,16 @@ func _brain_in_state(state: String, brain: ShooterBrain = _new_brain()) -> Shoot
 			_brain_in_state(TELEGRAPH, brain)
 			brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
 			brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	return brain
+
+
+## 予備動作の満了に達した(次の update() が真を返す)Brain を組み立てる。
+## 異常系をこの状態で見る理由は、拒否のフレームで滞在時間を巻き戻す実装を捕らえるため
+## である(滞在時間が 0 の状態から始めると、巻き戻しが no-op になって観測できない)。
+## 戻り値と state の不変は到達可能な状態を総当たりする表の側でも担保している
+func _brain_primed_to_fire() -> ShooterBrain:
+	var brain: ShooterBrain = _brain_in_state(TELEGRAPH)
+	brain.update(TELEGRAPH_TIME, NEAR_DISTANCE)
 	return brain
 
 
@@ -420,3 +462,106 @@ func test_every_reachable_state_is_one_of_the_shared_enum_values() -> void:
 		names.append(_state_name(_brain_in_state(state).state))
 
 	assert_array(names).is_equal(["IDLE", "TELEGRAPH", "COOLDOWN"])
+
+
+func test_a_zero_delta_is_rejected() -> void:
+	var brain: ShooterBrain = _brain_primed_to_fire()
+	var fired: Array = []
+	var call: Callable = func() -> void: fired.append(brain.update(ZERO_DELTA, NEAR_DISTANCE))
+
+	await assert_error(call).is_push_error(INVALID_DELTA_ERROR_FORMAT % ZERO_DELTA)
+
+	assert_array([fired[0], brain.state]).is_equal([false, EnemyState.State.TELEGRAPH])
+
+
+func test_a_negative_delta_is_rejected() -> void:
+	var brain: ShooterBrain = _brain_primed_to_fire()
+	var fired: Array = []
+	var call: Callable = func() -> void: fired.append(brain.update(NEGATIVE_DELTA, NEAR_DISTANCE))
+
+	await assert_error(call).is_push_error(INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA)
+
+	assert_array([fired[0], brain.state]).is_equal([false, EnemyState.State.TELEGRAPH])
+
+
+func test_a_negative_distance_is_rejected() -> void:
+	var brain: ShooterBrain = _brain_primed_to_fire()
+	var fired: Array = []
+	var call: Callable = func() -> void: fired.append(brain.update(FRAME_DELTA, NEGATIVE_DISTANCE))
+
+	await assert_error(call).is_push_error(NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE)
+
+	assert_array([fired[0], brain.state]).is_equal([false, EnemyState.State.TELEGRAPH])
+	# 滞在時間も巻き戻していないこと: 拒否のときに _elapsed を 0 へ戻す実装はここで落ちる。
+	# 満了に達した Brain で見るため、巻き戻せば次の 1 フレームで真が返らなくなる
+	var after: bool = brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	assert_array([after, brain.state]).is_equal([true, EnemyState.State.COOLDOWN])
+
+
+func test_invalid_arguments_are_rejected_in_every_reachable_state() -> void:
+	for state: String in REACHABLE_STATES:
+		for row: Array in INVALID_ARGUMENT_TABLE:
+			var brain: ShooterBrain = _brain_in_state(state)
+			var before: int = brain.state
+			var fired: Array = []
+			var context: String = "state=%s delta=%s distance=%s" % [state, row[0], row[1]]
+			var call: Callable = func() -> void: fired.append(brain.update(row[0], row[1]))
+
+			await assert_error(call).append_failure_message(context).is_push_error(row[2])
+
+			var actual: Array = [fired[0], brain.state]
+			assert_array(actual).append_failure_message(context).is_equal([false, before])
+
+
+# ガードを満了の判定より後ろに置いた実装は、拒否したフレームの delta を滞在時間へ数えてしまう。
+# 距離の異常と delta の異常でずれる向きが逆(足す / 引く)なので、両方に個別のケースを割り当てる。
+# なお「ガードの中で滞在時間を明示的に 0 へ戻す」実装は、滞在時間 0 から始める距離側のケース
+# では no-op になって観測できない。それを担うのは満了に達した Brain で拒否させる
+# test_a_negative_distance_is_rejected(距離側)と、下の delta 側のケース(こちらは
+# _brain_primed_to_fire() 起点なので同じ 1 本が両方を捕らえる)である
+func test_a_rejected_distance_does_not_count_toward_the_telegraph() -> void:
+	var brain: ShooterBrain = _brain_in_state(TELEGRAPH)
+	var call: Callable = func() -> void: brain.update(TELEGRAPH_TIME, NEGATIVE_DISTANCE)
+
+	await assert_error(call).is_push_error(
+		NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE
+	)
+
+	# 拒否のフレームを数えていれば、この 1 フレームで予備動作が満了して真が返る
+	var fired: bool = brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	assert_array([fired, brain.state]).is_equal([false, EnemyState.State.TELEGRAPH])
+
+
+func test_a_rejected_delta_does_not_count_toward_the_telegraph() -> void:
+	var brain: ShooterBrain = _brain_primed_to_fire()
+	var call: Callable = func() -> void: brain.update(NEGATIVE_DELTA, NEAR_DISTANCE)
+
+	await assert_error(call).is_push_error(INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA)
+
+	# 負の delta を数えていれば滞在時間が巻き戻り、この 1 フレームでは満了しない
+	var fired: bool = brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	assert_array([fired, brain.state]).is_equal([true, EnemyState.State.COOLDOWN])
+
+
+func test_a_smallest_positive_delta_is_accepted() -> void:
+	# 事前条件は「正であること」であり、0 のすぐ外側は正当な入力である。delta の検査を
+	# 正の側へ広げる変異はここで落ちる
+	var brain: ShooterBrain = _brain_in_state(TELEGRAPH)
+	var fired: Array = []
+	var call: Callable = func() -> void: fired.append(brain.update(SMALLEST_DELTA, NEAR_DISTANCE))
+
+	await assert_error(call).is_success()
+
+	assert_array([fired[0], brain.state]).is_equal([false, EnemyState.State.TELEGRAPH])
+
+
+func test_an_infinite_distance_is_accepted_and_ends_the_telegraph() -> void:
+	# 標的の不在は事前条件を満たす正当な入力である(4.13 の経路)。距離の検査を
+	# 「有限であること」まで広げる変異はここで落ちる
+	var brain: ShooterBrain = _brain_primed_to_fire()
+	var fired: Array = []
+	var call: Callable = func() -> void: fired.append(brain.update(SMALL_DELTA, INF))
+
+	await assert_error(call).is_success()
+
+	assert_array([fired[0], brain.state]).is_equal([true, EnemyState.State.COOLDOWN])
