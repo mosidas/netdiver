@@ -26,6 +26,27 @@ const OBLIQUE_DIRECTION: Vector2 = Vector2(3.0, -1.5)
 const WAIT_MILLIS: int = 700
 const TOLERANCE: Vector2 = Vector2(0.001, 0.001)
 
+# 実装の定数を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const ZERO_DIRECTION_ERROR: String = (
+	"EnemyProjectile.launch(): direction は Vector2.ZERO であってはならない。弾を進めずに返る"
+)
+const INVALID_LAUNCH_VALUE_ERROR_FORMAT: String = (
+	"EnemyProjectile.launch(): %s は正でなければならない(現在値: %s)。弾を進めずに返る"
+)
+const INVALID_SPEEDS: Array[float] = [0.0, -SPEED]
+const INVALID_DAMAGES: Array[int] = [0, -DAMAGE]
+const INVALID_MAX_DISTANCES: Array[float] = [0.0, -MAX_DISTANCE]
+# 境界のすぐ内側の値。ガードが 0 より広い範囲へ伸びたことを検出する
+# 向きは `Vector2.ZERO` でない最小の側から近づける。x 成分を 0 に取るのは
+# `direction.x == 0.0` で弾く実装(標的が真上・真下にいる射撃型が作る向き)を落とすため、
+# 各成分を CMP_EPSILON(1e-5)未満に取るのは `is_zero_approx()` や長さのしきい値へ
+# 置き換える実装を落とすため。長さで見る限り仕様の事前条件(`Vector2.ZERO` でないこと)より
+# 広いガードになる
+const SMALLEST_DIRECTION: Vector2 = Vector2(0.0, -0.000003)
+const SMALLEST_SPEED: float = 1.0
+const SMALLEST_DAMAGE: int = 1
+const SMALLEST_MAX_DISTANCE: float = 1.0
+
 # 弾が数フレームで届く位置に置く。矩形の縁が x = 11.0 で接し、弾は 2.0px 刻みで進むため
 # 縁とちょうど一致するフレームが無い(一致すると重なりの成立が Godot の境界の扱いに依存する)。
 # 重なりは 6 フレーム目、`Area2D` の通知の 1 フレームの遅れを足して解放は 7 フレーム目
@@ -237,6 +258,111 @@ func test_enemy_projectile_pushes_no_error_for_a_body_without_take_damage() -> v
 	assert_bool(projectile.is_queued_for_deletion()).is_true()
 
 
+func test_launch_rejects_a_zero_direction() -> void:
+	var projectile: EnemyProjectile = _create_enemy_projectile()
+	add_child(projectile)
+
+	await assert_error(
+		func() -> void: projectile.launch(Vector2.ZERO, SPEED, DAMAGE, MAX_DISTANCE)
+	).is_push_error(ZERO_DIRECTION_ERROR)
+
+	await _assert_stays_in_place([projectile])
+
+
+func test_launch_rejects_a_speed_that_is_not_positive() -> void:
+	var projectiles: Array[EnemyProjectile] = []
+
+	for speed: float in INVALID_SPEEDS:
+		var projectile: EnemyProjectile = _create_enemy_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["speed", speed]
+
+		await assert_error(
+			func() -> void: projectile.launch(AXIS_DIRECTION, speed, DAMAGE, MAX_DISTANCE)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+func test_launch_rejects_a_damage_that_is_not_positive() -> void:
+	var projectiles: Array[EnemyProjectile] = []
+
+	for damage: int in INVALID_DAMAGES:
+		var projectile: EnemyProjectile = _create_enemy_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["damage", damage]
+
+		await assert_error(
+			func() -> void: projectile.launch(AXIS_DIRECTION, SPEED, damage, MAX_DISTANCE)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+func test_launch_rejects_a_max_distance_that_is_not_positive() -> void:
+	var projectiles: Array[EnemyProjectile] = []
+
+	for max_distance: float in INVALID_MAX_DISTANCES:
+		var projectile: EnemyProjectile = _create_enemy_projectile()
+		add_child(projectile)
+		projectiles.append(projectile)
+		var expected: String = INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["max_distance", max_distance]
+
+		await assert_error(
+			func() -> void: projectile.launch(AXIS_DIRECTION, SPEED, DAMAGE, max_distance)
+		).is_push_error(expected)
+
+	await _assert_stays_in_place(projectiles)
+
+
+# 正常系を境界のすぐ内側で通す: 拒否の範囲が 0 より広がる変異を、異常系のケースでは検出できない。
+# 4 つの引数すべてを境界のすぐ内側に取る(向きは SMALLEST_DIRECTION の項を参照)
+func test_launch_accepts_the_smallest_positive_arguments() -> void:
+	var projectile: EnemyProjectile = _create_enemy_projectile()
+	add_child(projectile)
+
+	await assert_error(
+		func() -> void: projectile.launch(
+			SMALLEST_DIRECTION, SMALLEST_SPEED, SMALLEST_DAMAGE, SMALLEST_MAX_DISTANCE
+		)
+	).is_success()
+
+	assert_int(projectile.damage).is_equal(SMALLEST_DAMAGE)
+
+
+# 5.5(damage は launch() で決まり以後変わらない)の正常系と、拒否が「damage を含む状態を変えずに
+# 返る」ことを 1 本で見る。未発射の弾は damage が 0 のため、damage = 0 で拒否させる経路では
+# 「ガードが代入より後ろにある」実装と区別できない。発射済みの弾で見るとこの穴が閉じる
+func test_a_rejected_launch_keeps_the_damage_of_the_launch_that_succeeded() -> void:
+	var projectile: EnemyProjectile = _create_enemy_projectile()
+	add_child(projectile)
+
+	projectile.launch(AXIS_DIRECTION, SPEED, DAMAGE, MAX_DISTANCE)
+	await await_millis(WAIT_MILLIS)
+	var frames_before: int = projectile.frames_moved
+
+	# 射程には成功時と別の値(短い方)を渡す: 同じ値だと、拒否が _max_distance を書き換えても
+	# 観測できない。要件 5.6 の「状態を変えずに返る」は damage だけでなく射程の基準も含む
+	await assert_error(
+		func() -> void: projectile.launch(DIAGONAL_DIRECTION, SPEED, 0, SHORT_MAX_DISTANCE)
+	).is_push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["damage", 0])
+
+	assert_int(frames_before).is_greater(0)
+	assert_int(projectile.damage).is_equal(DAMAGE)
+	# 向きも射程も書き換わっていない: 拒否の後も最初の向きの延長を進み続け(斜めへ折れず)、
+	# SHORT_MAX_DISTANCE を超えても解放されない。
+	# 待ちは 2 回で合計 1400ms であり、射程 MAX_DISTANCE に達する 3333ms の半分に満たない
+	await await_millis(WAIT_MILLIS)
+	assert_bool(is_instance_valid(projectile)).is_true()
+	var frames: int = projectile.frames_moved
+	assert_int(frames).is_greater(frames_before)
+	assert_vector(projectile.position).is_equal_approx(
+		Vector2(_frame_step() * frames, 0.0), TOLERANCE
+	)
+
+
 func test_enemy_projectile_scene_is_on_the_enemy_projectile_layer() -> void:
 	var projectile: EnemyProjectile = _create_enemy_projectile()
 
@@ -300,6 +426,25 @@ func _assert_released_on_contact(exit_positions: Array[Vector2]) -> void:
 	var step: float = _frame_step()
 	assert_float(exit_positions[0].x).is_greater(contact_x)
 	assert_float(exit_positions[0].x).is_less_equal(contact_x + 2.0 * step)
+
+
+# 拒否された弾が進まないことを、待ちが足りなかった場合と区別して見る。witness は同じ待ちの間に
+# 物理フレームが消化されたことを示す
+func _assert_stays_in_place(projectiles: Array[EnemyProjectile]) -> void:
+	var witness: EnemyProjectile = _create_enemy_projectile()
+	add_child(witness)
+
+	witness.launch(AXIS_DIRECTION, SPEED, DAMAGE, MAX_DISTANCE)
+	await await_millis(WAIT_MILLIS)
+
+	assert_int(witness.frames_moved).is_greater(0)
+	for index: int in projectiles.size():
+		var projectile: EnemyProjectile = projectiles[index]
+		var context: String = "index=%s" % index
+		assert_int(projectile.frames_moved).append_failure_message(context).is_zero()
+		assert_vector(projectile.position).append_failure_message(context).is_equal(Vector2.ZERO)
+		# 引数を取り込んでいないことも見る: ガードが代入より後ろにあると damage が残る
+		assert_int(projectile.damage).append_failure_message(context).is_zero()
 
 
 # 解放後は位置を読めないため、ツリーを離れる直前の位置を控える

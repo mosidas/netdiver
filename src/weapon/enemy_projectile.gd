@@ -8,6 +8,13 @@ extends Area2D
 
 const TAKE_DAMAGE_METHOD: StringName = &"take_damage"
 
+const ZERO_DIRECTION_ERROR: String = (
+	"EnemyProjectile.launch(): direction は Vector2.ZERO であってはならない。弾を進めずに返る"
+)
+const INVALID_LAUNCH_VALUE_ERROR_FORMAT: String = (
+	"EnemyProjectile.launch(): %s は正でなければならない(現在値: %s)。弾を進めずに返る"
+)
+
 var damage: int = 0
 
 ## 位置を進めた物理フレームの数。
@@ -32,9 +39,26 @@ func _ready() -> void:
 ## 弾を発射する。射程はこの呼び出しの時点の位置から測る。
 ##
 ## 事前条件: 呼び出し側は発射位置を設定してから呼ぶ。発射後に位置を動かすと、その移動分が
-## 射程から差し引かれる。
+## 射程から差し引かれる。`direction` は `Vector2.ZERO` 以外、`speed`・`damage`・
+## `max_distance` は正。違反した場合は弾を進めずに返る。
 @warning_ignore("shadowed_variable")
 func launch(direction: Vector2, speed: float, damage: int, max_distance: float) -> void:
+	# ガードを関数の先頭に置く: 後ろに置くと、拒否する前に damage と射程の代入が済んでしまう
+	# 近さは見ない: 長さが 0 でない限り `normalized()` は向きを返すため、丸めるのは仕様の
+	# 事前条件(`Vector2.ZERO` でないこと)より広い
+	if direction == Vector2.ZERO:
+		push_error(ZERO_DIRECTION_ERROR)
+		return
+	if speed <= 0.0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["speed", speed])
+		return
+	if damage <= 0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["damage", damage])
+		return
+	if max_distance <= 0.0:
+		push_error(INVALID_LAUNCH_VALUE_ERROR_FORMAT % ["max_distance", max_distance])
+		return
+
 	self.damage = damage
 	_max_distance = max_distance
 	# 生成時の位置を基準にしない: 呼び出し側は生成してから発射位置を決めるため基準がずれる
