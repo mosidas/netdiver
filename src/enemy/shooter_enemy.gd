@@ -4,6 +4,10 @@ extends Enemy
 ## 定点から撃つ敵。体力・重力・標的の解決は `Enemy` が持ち、ここは `ShooterBrain` が発射を
 ## 告げたフレームで敵弾を 1 発生成する。滞在時間の計測と遷移の判断は持たない。
 
+const MISSING_PROJECTILE_SCENE_ERROR: String = (
+	"ShooterEnemy: projectile_scene が設定されていない。弾を生成せずに返る"
+)
+
 ## 敵弾のシーン。値の出どころを 1 箇所にするため、参照はシーンから与える
 @export var projectile_scene: PackedScene
 
@@ -42,10 +46,21 @@ func _advance_brain(delta: float) -> void:
 		_fire()
 
 
-# 敵弾を 1 発生成して標的へ向けて撃つ。
+# 敵弾を 1 発生成して標的へ向けて撃つ。撃てない 2 つの経路はどちらも弾を作らずに返り、
+# 周期は止めない(発射の可否は状態遷移の外にある)。
 #
 # 弾を自分の子にしない: 発射元と一緒に動いてしまい、進行方向どおりに飛ばなくなる
 func _fire() -> void:
+	# 弾のシーンの検査を標的の検査より先に置く: 両方が成立するフレームでも配線の誤りは知らせる
+	# (受け入れ基準 4.9 を 4.13 より優先する。人間が確定済みの判断)
+	if projectile_scene == null:
+		push_error(MISSING_PROJECTILE_SCENE_ERROR)
+		return
+
+	# 標的の不在は報告しない: 配線の誤りではなく、戦闘の途中で普通に起きる
+	if not is_instance_valid(target):
+		return
+
 	var projectile: EnemyProjectile = projectile_scene.instantiate()
 	get_parent().add_child(projectile)
 	# 位置を決めてから `launch()` を呼ぶ: 射程は `launch()` の時点の位置から測る

@@ -68,6 +68,12 @@ const STRAY_SPEED: float = 33.0
 
 const TOLERANCE: Vector2 = Vector2(0.001, 0.001)
 
+# 文言はテスト側に複製を持つ: 実装の定数を参照するとアサーションが自己成就し、文言を無意味な
+# 文字列へ差し替える変異が素通りする
+const MISSING_PROJECTILE_SCENE_ERROR: String = (
+	"ShooterEnemy: projectile_scene が設定されていない。弾を生成せずに返る"
+)
+
 # 3 物理フレーム(60 Hz で 50 ms)に対して余裕を取る: CI のランナーが遅い場合でも消化させる
 const WAIT_MILLIS: int = 500
 
@@ -158,6 +164,14 @@ func _step(enemy: ShooterEnemy) -> void:
 ## 直書きしない: 滞在時間や delta を動かすとフレーム数も変わる
 func _frames_to_fire() -> int:
 	return int(ceil(TELEGRAPH_TIME / DELTA)) + 2
+
+
+## 発射の 1 フレーム前まで進める。予備動作の途中であることを witness に取る: 達していないと、
+## 続く 1 フレームが発射のフレームにならず、異常系の観測点が空振りする
+func _advance_to_the_frame_before_the_shot(enemy: ShooterEnemy) -> void:
+	for _frame: int in _frames_to_fire() - 1:
+		_step(enemy)
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.TELEGRAPH)
 
 
 func _projectiles_in_the_container() -> Array:
@@ -412,6 +426,77 @@ func test_the_shooter_keeps_its_horizontal_velocity_at_zero() -> void:
 		_step(enemy)
 
 		assert_float(enemy.velocity.x).append_failure_message(context).is_equal(0.0)
+
+
+func test_the_shooter_reports_a_missing_projectile_scene_at_the_shot() -> void:
+	# 配線の誤りを知らせる経路である(要件 4.9)。外す時点は問わない(`Brain` は
+	# `projectile_scene` を見ないため、最初から外しても発射のフレームには達する)。観測を
+	# 発射のフレームに限るのは `assert_error` の窓の側である
+	var enemy: ShooterEnemy = _create_driven_shooter()
+	_place_target(enemy, NEAR_OFFSET)
+	enemy.projectile_scene = null
+	_advance_to_the_frame_before_the_shot(enemy)
+	var fire_frame: Callable = func() -> void:
+		_step(enemy)
+
+	await assert_error(fire_frame).is_push_error(MISSING_PROJECTILE_SCENE_ERROR)
+
+	assert_array(_projectiles_in_the_container()).is_empty()
+	# 発射を取りやめても周期は止まらない: 検査を `brain.update()` より前に置く実装はここで落ちる
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.COOLDOWN)
+
+
+func test_an_absent_target_at_the_shot_is_not_an_error() -> void:
+	# 4.9 との非対称をここで固定する(要件 4.13)。標的を失うのは配線の誤りではなく戦闘の途中で
+	# 起きる経路であり、報告しない。予備動作は距離によらず完走するため発射のフレームには達する
+	var enemy: ShooterEnemy = _create_driven_shooter()
+	_place_target(enemy, NEAR_OFFSET)
+	_advance_to_the_frame_before_the_shot(enemy)
+	enemy.target = null
+	var fire_frame: Callable = func() -> void:
+		_step(enemy)
+
+	await assert_error(fire_frame).is_success()
+
+	assert_array(_projectiles_in_the_container()).is_empty()
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.COOLDOWN)
+
+
+func test_a_released_target_at_the_shot_is_not_an_error() -> void:
+	# 不在のもう 1 つの経路である。`null` を入れる経路と別のケースに割り当てる
+	var enemy: ShooterEnemy = _create_driven_shooter()
+	var target: Node2D = _place_target(enemy, NEAR_OFFSET)
+	_advance_to_the_frame_before_the_shot(enemy)
+
+	target.queue_free()
+	# 解放の反映を待ってから発射のフレームを進める: 待たずに進めると `null` の経路と区別がつかない
+	await await_idle_frame()
+	assert_bool(is_instance_valid(target)).is_false()
+	var fire_frame: Callable = func() -> void:
+		_step(enemy)
+
+	await assert_error(fire_frame).is_success()
+
+	assert_array(_projectiles_in_the_container()).is_empty()
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.COOLDOWN)
+
+
+func test_a_missing_projectile_scene_is_reported_even_without_a_target() -> void:
+	# 4.9 と 4.13 が重なる状態である。両方が成立する場合も **4.9 を優先して `push_error` を
+	# 出す**(人間が確定済みの判断。tasks.md 5.4)。弾を生成しない点は両者一致するため、差は
+	# ログの 1 行に限られる。標的の検査を `projectile_scene` の検査より前へ移す変異がここで落ちる
+	var enemy: ShooterEnemy = _create_driven_shooter()
+	_place_target(enemy, NEAR_OFFSET)
+	enemy.projectile_scene = null
+	_advance_to_the_frame_before_the_shot(enemy)
+	enemy.target = null
+	var fire_frame: Callable = func() -> void:
+		_step(enemy)
+
+	await assert_error(fire_frame).is_push_error(MISSING_PROJECTILE_SCENE_ERROR)
+
+	assert_array(_projectiles_in_the_container()).is_empty()
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.COOLDOWN)
 
 
 func test_the_shooter_keeps_the_gravity_of_the_base() -> void:
