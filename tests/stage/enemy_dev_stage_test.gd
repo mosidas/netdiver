@@ -198,6 +198,40 @@ func test_the_player_death_is_wired_to_the_stage_by_the_scene_declaration() -> v
 	assert_bool(stage.has_method(DIED_HANDLER_NAME)).is_true()
 
 
+func test_the_handler_runs_no_reload_inside_its_own_call() -> void:
+	# 実機では `died` が敵の攻撃の当たり(物理コールバック)の中から届くため、ハンドラ自身の
+	# 呼び出しの中で再読込を走らせると現在のシーンの CollisionObject2D をコールバックの最中に
+	# 消すことになる。ここではその「自分の呼び出しの中では走らせない」ことを直接観測する。
+	#
+	# 観測できる理由: `assert_error()` は自前の logger を持ち
+	# (`addons/gdUnit4/src/asserts/GdUnitGodotErrorAssertImpl.gd:6` の
+	# `GodotGdErrorMonitor.GdUnitLogger.new(true, true)`)、渡した Callable の実行中に出た
+	# エンジンのエラーを拾う。再読込がこの場で走れば `current_scene` が null であることを
+	# エンジンがエラーとして押すため、同期に走る実装はここで落ちる。
+	#
+	# 前提のガード: テストの実行中 `current_scene` は null であり、遅延された再読込は何も
+	# 差し替えずに終わる。この前提が崩れると再読込がテストの実行そのものを壊す(要件 9.3 が
+	# 自動テストを禁じる理由)。gdUnit のアサーションの失敗は関数の実行を打ち切らないため、
+	# アサーションだけでは止められない。早期に抜ける枝を対で置く
+	assert_object(get_tree().current_scene).is_null()
+	if get_tree().current_scene != null:
+		return
+
+	var stage: EnemyDevStage = auto_free(EnemyDevStage.new())
+	add_child(stage)
+
+	# 遅延された再読込はこの窓の外(フレームの終わり)で走るため、この回のログには
+	# `ERROR: Parameter "current_scene" is null.` が 1 件出る。**これは正常である**。
+	# `assert_error` の外で出たエンジンのエラーは、グローバルの監視が既定で報告しないため
+	# (`GdUnitSettings.is_report_push_errors()` が false。`project.godot` に上書きは無い)
+	# 失敗にならない。この設定を true へ変えるときはこのケースを見直すこと。
+	# なお、ハンドラをコルーチンにして再読込を await の後ろへ置く形は、ここでは捕まらない
+	# (`assert_error` が待つのは渡した Callable の完了までで、その Callable が起こした
+	# コルーチンの再開までは待たない。レビューが実測)。その形も実機では安全であり
+	# 偽陰性ではないが、シグナルのハンドラは同期のままにする
+	await assert_error(func() -> void: stage._on_player_died()).is_success()
+
+
 func test_at_most_two_enemies_stand_inside_the_threat_ring() -> void:
 	var stage := _instantiate_stage()
 	var player: Node2D = stage.get_node(NodePath(PLAYER_NAME))
