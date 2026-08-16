@@ -459,3 +459,39 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **申し送り(意図的に閉じていない): 周期的なスポナーは 200ms の観測窓の外にある**(タスク 6.1)。`Engine.get_physics_frames() % 300 == 0` のように無状態で長い周期を持つスポナーは、観測窓に生成のフレームが入らないため素通りする。**窓を伸ばす是正は採らない** — 上の項の理由でテストの実行そのものを壊す方向になるためである。
 - **9.2 の「2 体まで」は、圏内の敵を 3 体にする変異を実際に作るまで空振りしうる**(タスク 6.1)。敵が 2 体しか無いシーンでは `count <= 2` が自明に真になる。3 体目を圏内へ置く変異でこのケースが落ちることを実測して初めて、判定が働いていると言える。あわせて「初期位置から敵が届く」ことを見るケース(距離 ≤ その敵の `detect_range`、射撃型は ≤ `bullet_max_distance`)を別に置いた。9.2 は**上限**しか定めず、下限(届かない場所へ置く退行)は 6.2 の目視でしか気付けないためである。これは受け入れ基準の外の固定であり(申し送り「要求の外の固定を足さない」に触れる)、6.2 の目視に資するため残した — **射撃型の余裕は 152.21 対 160.0 の 7.8px しかなく、配置を微調整するとこのケースが落ちうる**(その場合の是正はテスト側)。
 - **仮ステージの配置(タスク 6.1)**: 床 (160,100) 320×16・壁 (8,38)/(312,38) 16×108 は `dev_stage.tscn` と同形(`collision_layer` = 1)。`Player` (48,76)、`ChargerEnemy` (160,84)、`ShooterEnemy` (200,84) で、全員の底面が床上面 y=92 に接する。プレイヤーからの距離は突進型 ≈112.29(索敵 128・脅威の圏 160+128=288)、射撃型 ≈152.21(索敵 160・射程 216・脅威の圏 320)で、圏内は 2 体 ≤ 上限 2。**左壁際(x ≈ 22)まで下がると射撃型との距離が約 178 > 160 になり撃たなくなる**ため、6.2 で死亡を確かめるときは初期位置付近から動かないこと。
+
+### タスク 6.2 の実機確認(1 回目。**未完了**)
+
+**いつ・どの環境で**: 2026-08-16 21:57〜22:02(約 5 分)。macOS(Darwin 25.5.0)・Apple M2・Godot `4.7.1.stable.official.a13da4feb`・Metal 4.0 Forward+。起動は `godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn`。
+
+**確認できたこと**:
+
+- **要件 9.3 の再読込は発火した。** `player.died` → `_on_player_died` → `reload_current_scene()` の経路が実際に走ったことを、下のバックトレースが示している。
+- **同時に、同一のエラーが 14 件出た。** 14 件すべてこの経路であり、他の種類のエラー・警告・`push_error` の出力は 1 件も無い(標準出力の残りは Godot のバナーだけ)。
+
+```
+ERROR: Removing a CollisionObject node during a physics callback is not allowed and will cause undesired behavior. Remove with call_deferred() instead.
+   at: _notification (scene/2d/physics/collision_object_2d.cpp:99)
+   GDScript backtrace (most recent call first):
+       [0] _on_player_died (res://src/stage/enemy_dev_stage.gd:13)
+       [1] _on_health_depleted (res://src/player/player.gd:112)
+       [2] take_damage (res://src/player/health.gd:55)
+       [3] take_damage (res://src/player/player.gd:80)
+       [4] _on_body_entered (res://src/weapon/enemy_projectile.gd:84)
+```
+
+**是正**: `src/stage/enemy_dev_stage.gd` を `get_tree().reload_current_scene.call_deferred()` へ変えた。敵弾の衝突通知は `PhysicsServer2D` の query flush の中で発火するのに対し、`MessageQueue` の flush はその外側で走るため、シーンの削除が物理サーバの走査から出る。レビューが headless で 20 秒ずつ実測し、**是正前は死亡 2 回に対しエラー 2 件、是正後は死亡 2 回に対しエラー 0 件**であることを確認した(死亡回数が変わらないことが 9.3 を壊していないことの witness である — `Health` は 1 インスタンスにつき 1 回しか `depleted` を出さないため、2 回死ぬにはシーンが実際に読み直されている必要がある)。
+
+**まだ取得していない観察(6.2 は未完了。チェックボックスは付けない)**:
+
+- 予備動作を見てから移動を始めて回避が間に合うか(弾速 120 px/s・突進速度 150 px/s の手触り。spec.md §3 の未検証の前提)。
+- 標的と敵の x が一致するフレームで突進の向きが 0 に縮退する事象(タスク 3.3 の申し送り)が目に見えるか。
+- 敵弾が突進型を貫通する見た目の違和感。
+- 体力の推移(仮ステージに体力の表示が無いため、数値としては観察できていない)。
+
+### タスク 6.2 から出た学習と申し送り
+
+- **申し送り(範囲外・本単位では是正しない): `src/stage/dev_stage.gd` が同型の書き方を持つ**(タスク 6.2)。`_on_player_died()` が `get_tree().reload_current_scene()` を直接呼ぶ形は `DevStage` も同じである。**「あちらには敵がいないから起きない」は正しくない** — `DamageZone._on_body_entered()`(`src/stage/damage_zone.gd`)が接触の瞬間に 1 回目のダメージを与えるため、その 1 発が致命打になれば `DevStage._on_player_died()` も物理コールバックの中で走り、同じエラーが出る(周期ダメージの側は `_physics_process` 経由なので安全である)。既定値では `damage` 15・`max_health` 100 のため初回接触での即死は起きず、実機でも観測されていないが、**「起きない」ではなく「起こしにくい」**である。`dev_stage.gd` は unit #2 の凍結対象であり、上流の判断で本単位では変更しない。**本番のステージが同じ再読込を持つときに再び踏むため、その単位で `call_deferred` の形を採ること。**
+- **要件 9.3 のうち自動テストにできる部分の境界が動いた**(タスク 6.2)。spec.md 9.3 が禁じているのは「gdUnit のテストツリーで `reload_current_scene()` が**実際にシーンを差し替える**こと」であり、`current_scene` が null の下でハンドラを呼び、**再読込がその呼び出しの中で走らないこと**を観測するのは範囲内である。`test_the_handler_runs_no_reload_inside_its_own_call` がこの形で、実機のエラーを再現する変異を落とす。**前提(`current_scene` が null)が崩れると 9.3 の禁止へ静かに踏み込むため、アサーションと早期に抜ける枝を対で置いてある** — gdUnit のアサーションの失敗は関数の実行を打ち切らないため、アサーションだけでは止まらない(レビューが probe で実測)。
+- **`assert_error()` はグローバルの設定と無関係にエンジンのエラーを拾う**(タスク 6.2 で実測)。`GdUnitGodotErrorAssertImpl` は `GodotGdErrorMonitor.GdUnitLogger.new(true, true)` を**自前で**持つ(同ファイル 6 行目)。一方、テストの成否を左右するグローバルの監視は `GdUnitSettings.is_report_push_errors()`(既定 **false**、`project.godot` に上書き無し)に従うため、**`assert_error` の窓の外で出たエンジンのエラーは失敗にならない**。この非対称のおかげで、「窓の中では起きず、フレームの終わりに起きる」ことを観測する形が成立している。`tests/stage` の実行のたびにログへ `ERROR: Parameter "current_scene" is null.` が 1 件出るのは**正常**である(遅延された再読込がテストツリーで走った跡であり、no-op でないことの witness でもある)。**この設定を true へ変えるときは当該ケースを見直すこと。**
+- **`call_deferred` の担保は静的なソースの検査では取れない**(タスク 6.2。レビューが変異で実測)。`_on_player_died` の本体を読んで `not_contains("reload_current_scene()")` を見る形は、`Callable` を経由する変異(`var reload := get_tree().reload_current_scene` → `reload.call_deferred()` + `reload.call()`)を **26 ケース全緑のまま素通りさせ、headless では是正前と同じエラーを再現した**。同時に、正しい別解(`await` を挟んでから直接呼ぶ形)を落とす偽陽性も持っていた。すなわち**要求の内側を守れず、要求の外側を縛っていた**。振る舞い側のケース 1 本へ置換して閉じた。申し送り「『しないこと』を静的な検査だけで示さない」(タスク 2.4)の 3 例目である。
