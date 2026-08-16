@@ -40,6 +40,12 @@ const ZERO_DELTA: float = 0.0
 const NEGATIVE_DELTA: float = -0.125
 const ZERO_DISTANCE: float = 0.0
 const NEGATIVE_DISTANCE: float = -1.0
+# 0 のすぐ外側(-2^-20)。負値が -1.0 の 1 つだけだと、距離の検査を
+# `< -0.0001` のようなしきい値へ緩める実装と、報告する値を定数 -1.0 に固定する実装が
+# どちらも素通りする
+const SMALLEST_NEGATIVE_DISTANCE: float = -1.0 / 1048576.0
+# 事前条件を満たす最小の delta。ガードが正の側へ広がる実装はここで落ちる
+const SMALLEST_DELTA: float = 1.0 / 1048576.0
 
 # 有限だが桁が大きい距離。標的の不在(INF)の判定を巨大な有限値のしきい値へ置き換える実装は、
 # この距離で突進へ入らず落ちる
@@ -80,6 +86,11 @@ const INVALID_ARGUMENT_TABLE: Array = [
 	[ZERO_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % ZERO_DELTA],
 	[NEGATIVE_DELTA, NEAR_DISTANCE, INVALID_DELTA_ERROR_FORMAT % NEGATIVE_DELTA],
 	[FRAME_DELTA, NEGATIVE_DISTANCE, NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE],
+	[
+		FRAME_DELTA,
+		SMALLEST_NEGATIVE_DISTANCE,
+		NEGATIVE_DISTANCE_ERROR_FORMAT % SMALLEST_NEGATIVE_DISTANCE,
+	],
 ]
 
 # 到達できる状態 × 距離の総当たり。条件を広げる変異・分岐を入れ替える変異が片側だけの
@@ -435,6 +446,9 @@ func test_a_negative_delta_is_rejected() -> void:
 
 func test_a_negative_distance_is_rejected() -> void:
 	var brain: ChargerBrain = _brain_in_state(CHARGE)
+	# 満了に達するまで進めてから拒否させる: 滞在時間が 0 の状態で拒否させると、
+	# ガードへ `_elapsed = 0.0` を足す実装が no-op になって素通りする
+	brain.update(ATTACK_DURATION, NEAR_DISTANCE)
 	var expected: String = NEGATIVE_DISTANCE_ERROR_FORMAT % NEGATIVE_DISTANCE
 
 	await assert_error(
@@ -443,6 +457,10 @@ func test_a_negative_distance_is_rejected() -> void:
 
 	var actual: Array = [brain.state, brain.is_attack_active]
 	assert_array(actual).is_equal([EnemyState.State.CHARGE, true])
+	# 滞在時間も巻き戻していないこと: 巻き戻せば次の 1 フレームで硬直へ入らない
+	brain.update(SMALL_DELTA, NEAR_DISTANCE)
+	var after: Array = [brain.state, brain.is_attack_active]
+	assert_array(after).is_equal([EnemyState.State.RECOVER, false])
 
 
 func test_invalid_arguments_are_rejected_in_every_reachable_state() -> void:
@@ -496,6 +514,17 @@ func test_a_zero_distance_is_accepted_and_starts_the_telegraph() -> void:
 	await assert_error(func() -> void: brain.update(FRAME_DELTA, ZERO_DISTANCE)).is_success()
 
 	assert_int(brain.state).is_equal(EnemyState.State.TELEGRAPH)
+
+
+func test_a_smallest_positive_delta_is_accepted() -> void:
+	# 事前条件は「正であること」であり、0 のすぐ外側は正当な入力である。delta の検査を
+	# 正の側へ広げる変異はここで落ちる
+	var brain: ChargerBrain = _brain_in_state(TELEGRAPH)
+
+	await assert_error(func() -> void: brain.update(SMALLEST_DELTA, NEAR_DISTANCE)).is_success()
+
+	var actual: Array = [brain.state, brain.is_attack_active]
+	assert_array(actual).is_equal([EnemyState.State.TELEGRAPH, false])
 
 
 func test_the_distance_does_not_cut_a_state_short() -> void:
