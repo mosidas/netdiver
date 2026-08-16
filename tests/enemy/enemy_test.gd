@@ -277,6 +277,22 @@ func test_take_damage_rejects_a_non_positive_amount() -> void:
 	assert_bool(enemy.is_defeated).is_false()
 
 
+func test_take_damage_reports_a_non_positive_amount_even_after_the_defeat() -> void:
+	# 1.6 と 1.7 が重なるケース。1.7 は `is_defeated` に条件を付けていないため、撃破済みでも
+	# 引数の検査は働く。未撃破の状態でしか拒否を見ないと、引数の検査を撃破の判定より後ろへ
+	# 動かす実装(撃破済みなら黙って返る)が素通りする
+	var enemy: Enemy = _create_enemy()
+	enemy.take_damage(MAX_HP)
+
+	await (
+		assert_error(func() -> void: enemy.take_damage(0))
+		. is_push_error(INVALID_AMOUNT_ERROR_FORMAT % 0)
+	)
+
+	assert_int(enemy.hp).is_equal(0)
+	assert_bool(enemy.is_defeated).is_true()
+
+
 func test_a_bare_enemy_returns_the_charger_kind() -> void:
 	var enemy: Enemy = _create_enemy()
 
