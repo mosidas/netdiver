@@ -38,6 +38,13 @@ const APPROACH_GAP: float = (ATTACK_REACH + DETECT_RANGE) * 0.5
 const OUT_OF_RANGE_GAP: float = DETECT_RANGE * 2.0
 const CHARGE_GAP: float = ATTACK_REACH * 0.5
 
+# 索敵範囲の境界のすぐ外側。絶対値ではなく比(1 + 2^-20)で近づける: 比なら索敵範囲の
+# 大きさによらず同じだけ境界へ詰められる。90.0 では差が 8.39e-5 で float32 の 11 ulp に当たり、
+# `Vector2` へ書いても丸めで境界の内側へ戻らない(これ以上詰めると戻る)。
+# 手本の 2 つの `*_brain_test.gd` と同じ作法である
+const OVER_RATIO: float = 1.0 + 1.0 / 1048576.0
+const JUST_OUTSIDE_DETECT_RANGE: float = DETECT_RANGE * OVER_RATIO
+
 const SPAWN_POSITION: Vector2 = Vector2.ZERO
 
 # 同期で進めるフレーム数の上限。遷移しない実装でテストが止まり続けないようにする
@@ -293,6 +300,23 @@ func test_the_charger_stands_still_for_a_target_beyond_the_detect_range() -> voi
 	var enemy: ChargerEnemy = _create_driven_charger()
 	_place_target(enemy, Vector2(OUT_OF_RANGE_GAP, 0.0))
 
+	enemy._update_velocity(DELTA)
+
+	assert_int(enemy.brain.state).is_equal(EnemyState.State.IDLE)
+	assert_float(enemy.velocity.x).is_equal(0.0)
+
+
+func test_the_charger_stands_still_for_a_target_just_outside_the_detect_range() -> void:
+	# 境界のすぐ外側の観測点。ここが無いと、索敵範囲のしきい値を緩める実装(索敵範囲より
+	# 遠い標的へ近づき始める)が、ちょうどの距離と 2 倍の距離だけを見る観測点を素通りする。
+	# 接近で水平の速度を持たせてから境界を跨がせる: 生成直後は `velocity.x` が 0 であり、
+	# 外側へ置いて 1 フレーム与えるだけだと、停止の代入そのものを消す実装が素通りする
+	var enemy: ChargerEnemy = _create_driven_charger()
+	var target: Node2D = _place_target(enemy, Vector2(APPROACH_GAP, 0.0))
+	enemy._update_velocity(DELTA)
+	assert_float(enemy.velocity.x).is_equal(MOVE_SPEED)
+
+	target.position = enemy.position + Vector2(JUST_OUTSIDE_DETECT_RANGE, 0.0)
 	enemy._update_velocity(DELTA)
 
 	assert_int(enemy.brain.state).is_equal(EnemyState.State.IDLE)
