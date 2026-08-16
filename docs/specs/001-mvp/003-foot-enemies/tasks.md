@@ -328,7 +328,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §5.8「`run/main_scene` は変更しない」、§7 Requirement 9.8
     - 実装の要点: 既存の `### 仮ステージを目視で確認する` の節に並べる形で追記し、既存の `dev_stage.tscn` の記述と規約そのものの記述は変えない。2 つの仮ステージの用途の違い(プレイヤー単体の確認 / 敵との戦闘の確認)を 1 行で示す
     - 検証コマンド: `grep -q 'res://src/stage/enemy_dev_stage.tscn' docs/testing.md && grep -q 'res://src/stage/dev_stage.tscn' docs/testing.md && echo OK`
-  - [ ] 6.4 数値の直書き・純ロジックの分離・凍結済みの割り当ての 3 点を横断的に検査する
+  - [x] 6.4 数値の直書き・純ロジックの分離・凍結済みの割り当ての 3 点を横断的に検査する
     _Requirements: 1.20, 8.1, 10.5_
     _Boundary: EnemyStats_
     _Depends: 6.3_
@@ -495,3 +495,24 @@ ERROR: Removing a CollisionObject node during a physics callback is not allowed 
 - **要件 9.3 のうち自動テストにできる部分の境界が動いた**(タスク 6.2)。spec.md 9.3 が禁じているのは「gdUnit のテストツリーで `reload_current_scene()` が**実際にシーンを差し替える**こと」であり、`current_scene` が null の下でハンドラを呼び、**再読込がその呼び出しの中で走らないこと**を観測するのは範囲内である。`test_the_handler_runs_no_reload_inside_its_own_call` がこの形で、実機のエラーを再現する変異を落とす。**前提(`current_scene` が null)が崩れると 9.3 の禁止へ静かに踏み込むため、アサーションと早期に抜ける枝を対で置いてある** — gdUnit のアサーションの失敗は関数の実行を打ち切らないため、アサーションだけでは止まらない(レビューが probe で実測)。
 - **`assert_error()` はグローバルの設定と無関係にエンジンのエラーを拾う**(タスク 6.2 で実測)。`GdUnitGodotErrorAssertImpl` は `GodotGdErrorMonitor.GdUnitLogger.new(true, true)` を**自前で**持つ(同ファイル 6 行目)。一方、テストの成否を左右するグローバルの監視は `GdUnitSettings.is_report_push_errors()`(既定 **false**、`project.godot` に上書き無し)に従うため、**`assert_error` の窓の外で出たエンジンのエラーは失敗にならない**。この非対称のおかげで、「窓の中では起きず、フレームの終わりに起きる」ことを観測する形が成立している。`tests/stage` の実行のたびにログへ `ERROR: Parameter "current_scene" is null.` が 1 件出るのは**正常**である(遅延された再読込がテストツリーで走った跡であり、no-op でないことの witness でもある)。**この設定を true へ変えるときは当該ケースを見直すこと。**
 - **`call_deferred` の担保は静的なソースの検査では取れない**(タスク 6.2。レビューが変異で実測)。`_on_player_died` の本体を読んで `not_contains("reload_current_scene()")` を見る形は、`Callable` を経由する変異(`var reload := get_tree().reload_current_scene` → `reload.call_deferred()` + `reload.call()`)を **26 ケース全緑のまま素通りさせ、headless では是正前と同じエラーを再現した**。同時に、正しい別解(`await` を挟んでから直接呼ぶ形)を落とす偽陽性も持っていた。すなわち**要求の内側を守れず、要求の外側を縛っていた**。振る舞い側のケース 1 本へ置換して閉じた。申し送り「『しないこと』を静的な検査だけで示さない」(タスク 2.4)の 3 例目である。
+
+### タスク 6.4 の横断検査(結果)
+
+2026-08-16 に実施。**6 本の検証コマンドすべてが `OK`(または期待どおりの出力)であり、実装コードの変更は 1 件も要らなかった。**
+
+| 検査 | 結果 |
+| ---- | ---- |
+| 数値の直書き(8.1。パターンを `.tres` から導出) | `OK`。抽出できた小数は 11 個(`0.4` / `0.6` / `0.8` / `1.5` / `40.0` / `120.0` / `128.0` / `150.0` / `160.0` / `216.0` / `600.0`)で、一致した実装行は 0 件 |
+| 純ロジックの分離(1.20) | `src/enemy/enemy.gd:85` の 1 箇所のみ。2 つの `*_brain.gd` には現れない |
+| レイヤ 1〜3 の割り当て(10.5) | `OK`(3 行が原文のまま実在) |
+| 凍結済みファイルの内容ハッシュ(`player.tscn` / `projectile.tscn` / `projectile.gd`) | `OK` |
+| `.tres` の行の欠落(パターン導出が縮退していないこと) | `OK`(`enemy_stats.gd` の 10 項目に対し 2 つの `.tres` とも 10 行) |
+| 通しの実行 | `rc=0 skipped=0 orphans=0`。**403 test cases / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**、25/25 suites |
+
+- **無関係な小数リテラルの偶然の一致は 1 件も無かった**ため、判定を緩めた箇所は無い(タスク 6.4 の実装の要点が求める「除外したら記録する」に該当する事象なし)。
+- **抽出が縮退していないことの確認**: パターンが空になると grep が全行に一致して常時 `NG` になるが、実際には 11 個の値が抽出され、かつ `.tres` の行数の検査も通っている。**パターンの導出が縮退する方向**には壊れていない(この確認が及ぶ範囲はここまでである。下の盲点の項を参照)。
+- **検出力の実測(レビューが変異で確認)**: 8.1 は `charger_enemy.gd` へ `150.0`・`128.0` を直書きする変異で該当行を出力する。1.20 は 2 つの `*_brain.gd` へ `move_and_slide` の語を入れる変異・`charger_enemy.gd` へ `move_and_slide()` を足す変異で出力が増える。10.5 は `project.godot` の複製に対する変異(`layer_2="player_body"`・`layer_1="ground"`)で `NG` になる(`grep -qx` の完全行一致であり、期待値は tasks.md 側のリテラルとして持っていて `project.godot` から読み直していない)。
+- **申し送り(既知の盲点。8.1 の検査をすり抜ける書き方が実在する)**: **小数の値を整数の表記で直書きすると、grep もテストも通る**(レビューが実測)。`charger_enemy.gd` の索敵範囲の比較を `if distance <= 128:`(`.tres` の `detect_range = 128.0` と同値)へ変異させると、8.1 の検証コマンドはパターンが `128\.0` の小数形しか見ないため `OK` を返し、`make test` も 403 ケース全緑になる。すり抜けるのは「整数の表記 かつ その境界をテストが挟んでいない項目」に限られる(`velocity.x = 150 * _charge_direction` の側は `tests/enemy` が 5 failures で落とす)。**現在のツリーに該当する直書きは 1 件も無い**が、6.4 の検証コマンドが整数を検査から外している以上、この方向は構造的に開いている。**最終検証パネルへ申し送る。**
+- **申し送り(1.20 の検証コマンドは機械判定になっていない)**: `grep -n 'move_and_slide' src/enemy/*.gd` は「`enemy.gd` の 1 箇所だけであること」を人間が読む形であり、他の 5 本のように `echo OK` / 非 0 の終了で落ちない。上の 3 種の変異はいずれも出力行が増えるため目視では確実に気付けるが、自動化の度合いは 1 段低い。
+- **索敵範囲の境界がテストで挟まれていない**(レビューが上の盲点の副産物として指摘)。`tests/enemy/charger_enemy_test.gd` の観測点は `APPROACH_GAP` = 70 と `OUT_OF_RANGE_GAP` = 180 で、`DETECT_RANGE` = 90.0 の**両側のすぐ近く**に観測点が無い。タスク 5.2 が残した `ChargerBrain` の 2 つの穴と同種の「検出力の不足」であり、**最終検証パネルで併せて見ること。**
+- **申し送り(6.4 の範囲に入れなかった): タスク 5.2 が残した `ChargerBrain` の 2 つの穴は未了である**(該当の項は上を参照)。`src/enemy/charger_brain.gd` へ `distance_to_target < -0.0001` と `delta <= 0.0001` を同時に注入しても `charger_brain_test.gd` の 36 ケースは緑のまま通る。実装の振る舞いに欠陥は無く、不足はテストの検出力である(是正は定数 1 行 + 表 1 行 + ケース 1 本)。6.4 に入れなかったのは、**6.4 の `_Boundary_` が `EnemyStats` であり、`ChargerBrain` の検出力の是正は別の境界に属する**ため(1 コミットが 2 つの境界に跨る)。**最終検証パネルへ申し送る。**
