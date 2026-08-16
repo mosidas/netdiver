@@ -64,7 +64,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 ## タスク一覧
 
-- [ ] 1. 共有の型と数値の確定(契約先行)
+- [x] 1. 共有の型と数値の確定(契約先行)
 
   タスク 3・4・5 は並行して進められるが、いずれも `EnemyStats` と 2 つの enum を共有する。Step 4(契約先行)に従い、共有する契約を最初に確定させる。
 
@@ -81,7 +81,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 7.1・7.2 は `CombatLimits` の定数と 2 種の値を比較する。7.3 は `src/weapon/combat_limits.gd` を変更しないことであり、検証コマンドの内容ハッシュで示す(既存の `tests/weapon/combat_limits_test.gd` が値そのものを固定している)
     - 検証コマンド: `make test TESTS=res://tests/enemy`、`test "$(git hash-object src/weapon/combat_limits.gd)" = "34f2402a38e7a55fcd1f642216fa4a8d658e6d15" && echo OK`
 
-- [ ] 2. 敵の基底とプレイヤーの弾による被弾(リスク先行の垂直スライス)
+- [x] 2. 敵の基底とプレイヤーの弾による被弾(リスク先行の垂直スライス)
 
   spec.md §3 の未検証の前提のうち最も重いもの(`Hurtbox` の `area_entered` による検出と、同じフレームの `Projectile` 自身による解放が両立すること)を、状態遷移より前に確かめる。この前提が崩れると要件 6 と §5.6 の設計が組み替えになる。「プレイヤーが撃つ → 敵の体力が減る → 撃破される」を縦に貫くスライスとして進める。
 
@@ -142,7 +142,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 10.2 は `Hurtbox` の `collision_layer` = 8、`collision_mask` = 4 の整数値を直接アサーションする
     - 検証コマンド: `make test TESTS=res://tests/enemy`、`test "$(grep -c 'queue_free' src/enemy/hurtbox.gd)" = 0 && echo OK`
 
-- [ ] 3. 突進型(状態遷移 → 移動 → 攻撃判定)
+- [x] 3. 突進型(状態遷移 → 移動 → 攻撃判定)
 
   - [x] 3.1 (P) `ChargerBrain` の状態遷移(正常系)を実装する
     _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.8, 2.9_
@@ -209,7 +209,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 実装の要点: 3.5 と 3.10 は優先順位が逆転する分岐であり、**`is_attack_active` が真のまま撃破される**状況(`CHARGE` の最中に `take_damage()` で `hp` を 0 にする)を作って、同じ物理フレームのうちに `monitoring` が偽になることを見る。解放(`queue_free()`)の反映を待つ前に読む必要があるため、`is_instance_valid()` の確認と併せて組む
     - 検証コマンド: `make test TESTS=res://tests/enemy`
 
-- [ ] 4. (P) 敵弾
+- [x] 4. (P) 敵弾
 
   `EnemyProjectile` は `EnemyStats` にも `Enemy` にも依存せず(値はすべて `launch()` の引数で受け取る)、タスク 1 の完了を待たずに始められる。
 
@@ -246,7 +246,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 実装の要点(タスク固有): 4 つの異常な引数それぞれに個別のテストケースを割り当て、`push_error`・弾が進まないこと・**`damage` が変わらないこと**の 3 つを見る(ガードを代入の後ろへ移す変異を捕らえる。unit #2 の申し送り)。異常値の表に負値と 0 の両方を入れる。5.5 は正常系でも見る(`launch()` の後に `damage` を書き換える経路が無いこと)
     - 検証コマンド: `make test TESTS=res://tests/weapon`
 
-- [ ] 5. 射撃型(状態遷移 → 発射)
+- [x] 5. 射撃型(状態遷移 → 発射)
 
   - [x] 5.1 (P) `ShooterBrain` の状態遷移を実装する
     _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.11, 4.12_
@@ -295,7 +295,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 標的の不在は `null` と解放済みの 2 経路がある。少なくとも `null` を (b) で、解放済みを別ケースで見る
     - 検証コマンド: `make test TESTS=res://tests/enemy`
 
-- [ ] 6. 仮ステージ・文書・横断の検査
+- [x] 6. 仮ステージ・文書・横断の検査
 
   - [x] 6.1 `enemy_dev_stage.tscn` を作り、配置規約と `died` の接続を検証する
     _Requirements: 9.1, 9.2, 9.4, 9.5, 9.6, 9.7, 9.9, 9.11_
@@ -312,7 +312,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 9.9 は各敵の `target` が `Player` ノードを指していることを、ツリーへ載せずに読んで検証する
       - 9.11 は spec.md §6.5 の**実装の配置**と `docs/testing.md` の**テストの配置**の両方を求める。検証コマンドの存在確認に `src/` 配下 19 ファイルだけでなく **`tests/` 配下 9 ファイル**(`tests/enemy/` 7 本・`tests/weapon/` 1 本・`tests/stage/` 1 本)も並べる。実装の側だけを見ると「テストの配置規約に従う」半分が未検査のまま通る
     - 検証コマンド: `make test TESTS=res://tests/stage`、`test "$(git hash-object src/stage/dev_stage.tscn)" = "8c8d95cdce4d0e0ba78ab942db1c75d27651680e" && echo OK`、`ng=0; for f in src/enemy/enemy_stats.gd src/enemy/enemy_state.gd src/enemy/enemy_kind.gd src/enemy/enemy.gd src/enemy/charger_brain.gd src/enemy/charger_enemy.gd src/enemy/charger_enemy.tscn src/enemy/shooter_brain.gd src/enemy/shooter_enemy.gd src/enemy/shooter_enemy.tscn src/enemy/hurtbox.gd src/enemy/hurtbox.tscn src/enemy/attackbox.gd src/enemy/charger_stats.tres src/enemy/shooter_stats.tres src/weapon/enemy_projectile.gd src/weapon/enemy_projectile.tscn src/stage/enemy_dev_stage.gd src/stage/enemy_dev_stage.tscn tests/enemy/enemy_stats_test.gd tests/enemy/enemy_test.gd tests/enemy/hurtbox_test.gd tests/enemy/charger_brain_test.gd tests/enemy/charger_enemy_test.gd tests/enemy/shooter_brain_test.gd tests/enemy/shooter_enemy_test.gd tests/weapon/enemy_projectile_test.gd tests/stage/enemy_dev_stage_test.gd; do test -f "$f" || { echo "NG: $f"; ng=1; }; done; test $ng -eq 0 && echo OK`
-  - [ ] 6.2 リトライ(`died` からのシーン再読込)を実行時に目視で確認する(自動テストでは検証しない)
+  - [x] 6.2 リトライ(`died` からのシーン再読込)を実行時に目視で確認する(自動テストでは検証しない)
     _Requirements: 9.3_
     _Boundary: EnemyDevStage_
     _Depends: 6.1_
@@ -460,9 +460,13 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **9.2 の「2 体まで」は、圏内の敵を 3 体にする変異を実際に作るまで空振りしうる**(タスク 6.1)。敵が 2 体しか無いシーンでは `count <= 2` が自明に真になる。3 体目を圏内へ置く変異でこのケースが落ちることを実測して初めて、判定が働いていると言える。あわせて「初期位置から敵が届く」ことを見るケース(距離 ≤ その敵の `detect_range`、射撃型は ≤ `bullet_max_distance`)を別に置いた。9.2 は**上限**しか定めず、下限(届かない場所へ置く退行)は 6.2 の目視でしか気付けないためである。これは受け入れ基準の外の固定であり(申し送り「要求の外の固定を足さない」に触れる)、6.2 の目視に資するため残した — **射撃型の余裕は 152.21 対 160.0 の 7.8px しかなく、配置を微調整するとこのケースが落ちうる**(その場合の是正はテスト側)。
 - **仮ステージの配置(タスク 6.1)**: 床 (160,100) 320×16・壁 (8,38)/(312,38) 16×108 は `dev_stage.tscn` と同形(`collision_layer` = 1)。`Player` (48,76)、`ChargerEnemy` (160,84)、`ShooterEnemy` (200,84) で、全員の底面が床上面 y=92 に接する。プレイヤーからの距離は突進型 ≈112.29(索敵 128・脅威の圏 160+128=288)、射撃型 ≈152.21(索敵 160・射程 216・脅威の圏 320)で、圏内は 2 体 ≤ 上限 2。**左壁際(x ≈ 22)まで下がると射撃型との距離が約 178 > 160 になり撃たなくなる**ため、6.2 で死亡を確かめるときは初期位置付近から動かないこと。
 
-### タスク 6.2 の実機確認(1 回目。**未完了**)
+### タスク 6.2 の実機確認
 
-**いつ・どの環境で**: 2026-08-16 21:57〜22:02(約 5 分)。macOS(Darwin 25.5.0)・Apple M2・Godot `4.7.1.stable.official.a13da4feb`・Metal 4.0 Forward+。起動は `godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn`。
+2 回に分けて実施した。1 回目で要件 9.3 の再読込の発火と、それに伴うエラーを観測して是正し、2 回目で是正の確認と手触りの観察を行った。
+
+#### 1 回目(2026-08-16 21:57〜22:02、約 5 分)
+
+**いつ・どの環境で**: macOS(Darwin 25.5.0)・Apple M2・Godot `4.7.1.stable.official.a13da4feb`・Metal 4.0 Forward+。起動は `godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn`。
 
 **確認できたこと**:
 
@@ -482,12 +486,17 @@ ERROR: Removing a CollisionObject node during a physics callback is not allowed 
 
 **是正**: `src/stage/enemy_dev_stage.gd` を `get_tree().reload_current_scene.call_deferred()` へ変えた。敵弾の衝突通知は `PhysicsServer2D` の query flush の中で発火するのに対し、`MessageQueue` の flush はその外側で走るため、シーンの削除が物理サーバの走査から出る。レビューが headless で 20 秒ずつ実測し、**是正前は死亡 2 回に対しエラー 2 件、是正後は死亡 2 回に対しエラー 0 件**であることを確認した(死亡回数が変わらないことが 9.3 を壊していないことの witness である — `Health` は 1 インスタンスにつき 1 回しか `depleted` を出さないため、2 回死ぬにはシーンが実際に読み直されている必要がある)。
 
-**まだ取得していない観察(6.2 は未完了。チェックボックスは付けない)**:
+#### 2 回目(2026-08-16 23:18 開始。是正後の状態で実施)
 
-- 予備動作を見てから移動を始めて回避が間に合うか(弾速 120 px/s・突進速度 150 px/s の手触り。spec.md §3 の未検証の前提)。
-- 標的と敵の x が一致するフレームで突進の向きが 0 に縮退する事象(タスク 3.3 の申し送り)が目に見えるか。
-- 敵弾が突進型を貫通する見た目の違和感。
-- 体力の推移(仮ステージに体力の表示が無いため、数値としては観察できていない)。
+**いつ・どの環境で**: 1 回目と同じ環境(macOS Darwin 25.5.0・Apple M2・Godot `4.7.1.stable.official.a13da4feb`・Metal 4.0 Forward+)。是正コミット `e575507` を含む状態で起動した。
+
+**確認できたこと**:
+
+- **是正が効いている。エラーは 0 件である。** 実行の全出力は Godot のバナー(バージョン行と Metal の行)だけであり、`Removing a CollisionObject node during a physics callback` も、他のエラー・警告も 1 件も出なかった(是正前の同じ操作では 14 件)。1 回目の是正が headless の実測だけでなく実機の目視でも確認された。
+- **要件 9.3 の再読込は起きた。** プレイヤーの体力を 0 にすると画面が初期配置(プレイヤー左端・突進型 中央・射撃型 右)へ戻り、その後**もう一度同じだけ持ちこたえた**。仮ステージに体力の表示が無いため数値としては読めないが、2 度目も同じだけ持ちこたえたことが体力の初期化を示している。
+- **手触りは要求を満たす。予備動作を見てから移動を始めて、余裕を持って回避できた。** 弾速 120 px/s・突進速度 150 px/s・予備動作 0.4 秒は、企画書 5. の条件(予備動作を目視で識別できる・移動で回避できる弾速)を満たす。**これらの数値はこのまま確定する**(人間の判断)。spec.md §3 の未検証の前提のうち手触りに関わるものはこれで解消した。
+- **タスク 3.3 の申し送り(標的と敵の x が一致するフレームで突進の向きが 0 に縮退する事象)は目視では気付かなかった。実害なしとして閉じる**(人間の判断)。上流(spec.md §5.2)への差し戻しは行わない。
+- **敵弾が突進型を貫通する見た目にも違和感は無かった。現在の当たり判定のまま進める**(人間の判断)。
 
 ### タスク 6.2 から出た学習と申し送り
 
