@@ -64,6 +64,14 @@ make selfcheck                     # 実行スクリプトの終了コードの�
 godot --path <プロジェクトのルート> res://src/stage/dev_stage.tscn
 ```
 
+敵との戦闘の振る舞い(索敵・被弾・撃破・死亡してからのリトライ)は、床・壁とプレイヤー・敵を置いた仮ステージ `src/stage/enemy_dev_stage.tscn` を直接起動して目で確かめる。
+
+```sh
+godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn
+```
+
+**用途が違う**。`dev_stage.tscn` はプレイヤー単体の手触りを見る場、`enemy_dev_stage.tscn` は敵との戦闘を見る場である。
+
 - **`--headless` では確認できない**。画面が出ないため目視にならない。`make test` の経路とは別に、GUI の Godot を起動すること
 - `run/main_scene` は `res://main.tscn` のままであり、仮ステージは引数で明示したときだけ起動する
 - 目視でしか確認できない事項は、その作業単位の `tasks.md` の `## Implementation Notes` に「いつ・どの環境で・何を確認したか」を記録する。`make test` には現れないため、記録しないと確認した事実が残らない

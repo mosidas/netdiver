@@ -320,7 +320,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 仕様参照: spec.md §7 Requirement 9.3(自動テストにしない理由を含む)
     - 実装の要点: 敵の攻撃を受け続けてプレイヤーの体力を 0 にし、シーンが読み直されて初期位置と体力が戻ることを確認する。あわせて spec.md §3 の未検証の前提のうち手触りに関わるもの(弾速 120 px/s・突進速度 150 px/s で「見てから移動を始めても間に合う」か、体力 30 / 20 の撃破の粒度)も同じ実行で観察する。**確認できた事実(いつ・どの環境で・何を確認したか)を `## Implementation Notes` に記録する**。`make test` には現れないため、記録しないと確認した事実が残らない
     - 検証コマンド: `godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.tscn`(目視。`--headless` では確認できない)
-  - [ ] 6.3 `docs/testing.md` に `enemy_dev_stage.tscn` の起動方法を追記する
+  - [x] 6.3 `docs/testing.md` に `enemy_dev_stage.tscn` の起動方法を追記する
     _Requirements: 9.8_
     _Boundary: Docs_
     _Depends: 6.2_
