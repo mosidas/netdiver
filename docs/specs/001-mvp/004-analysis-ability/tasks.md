@@ -116,7 +116,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   第 3 の枠の残り回数・クールダウン・押下の縁をすべてこのクラスに閉じる。`Player` は戻り値を読むだけになる(spec.md §5.1「ロジックの所在」)。3 つのサブタスクは同じファイルを触るため順に進める。
 
-  - [ ] 2.1 生成直後の状態と `grant()` の上書きを実装する
+  - [x] 2.1 生成直後の状態と `grant()` の上書きを実装する
     _Requirements: 1.1, 1.2, 1.3, 1.13, 1.15_
     _Boundary: AbilitySlot_
     - 対象ファイル: `src/ability/ability_slot.gd`(新規), `tests/ability/ability_slot_test.gd`(新規)
@@ -422,4 +422,11 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - `Player._report_non_positive_stats()` は `PROPERTY_USAGE_EDITOR` かつ `PROPERTY_USAGE_SCRIPT_VARIABLE` で絞るため、**`@export` を付けない内部項目は検査に載らない**。
   - **`assert_error(...).is_push_error()` は `await` を付け忘れると常に緑になる。** `add_child()` が引き起こす `_ready()` の `push_error` を捕まえられる。
   - `PlayerStats` を継承した内部クラス(`@export var unknown_stat`)で「項目名を列挙していないこと」を示す型は `Player` でも機能する。タスク 4.x でも同じ手が使える。
+- **タスク 2.1 の成果と 2.2・2.3 への申し送り**:
+  - テストの定数は `FRAME_DELTA = 0.0625`(2 進で厳密)・`COOLDOWN = 0.25`(= 4 × FRAME_DELTA、既定の 1.5 と離してある)。発射ヘルパ `_fire()` は「4 フレーム離す → 押す」であり、**2.2 が押下の縁とクールダウンを入れても既存 17 ケースは緑のまま通る想定**で組んである。既存ケースの書き換えは不要な見込み。
+  - `update()` は現時点で `_delta` を読まない(引数名が `_delta` なのは未使用引数のため)。**2.2 で経過を累積する時点で `delta` へ戻すこと**(spec.md §5.1 の署名の表記に揃う唯一のタイミング)。
+  - **1.9・1.14 は現時点で確実に RED になる**(レビュアーが probe で実測: 空の枠でも `update()` が真を返し、押下を 5 フレーム与えると `remaining_uses` が -5 まで潜る)。2.3 は「残り 0 で縁を 5 フレーム与えて `remaining_uses == 0`」のケースを先に書けば RED を観測できる。
+  - **レビューで 1 度 REJECTED になった原因**: `update()` に 1.9・1.14 のガードを先取りで入れたこと。無検証の分岐が src に残り、かつ後続タスクが RED から入れなくなる。**このタスク列では「担当外の要件を先回りして実装しない」ことを守ること。**
+  - `test_the_values_used_here_differ_from_the_defaults` が「テストの使う値が `PlayerStats` の既定と一致しないこと」を固定している。既定値を動かす変更が来たらこのケースが番人になる。
+  - Godot 4.7.1 のこのプロジェクトでは `UNUSED_PARAMETER` 警告は `--check-only` / `--import` / `make test` のいずれでも出力されない(`project.godot` に `debug/gdscript/warnings/*` の設定が無い)。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
