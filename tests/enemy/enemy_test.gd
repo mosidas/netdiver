@@ -194,6 +194,22 @@ func test_defeated_is_emitted_once_with_the_kind_when_the_hp_reaches_zero() -> v
 	assert_array(emissions).is_equal([EnemyKind.Kind.CHARGER])
 
 
+func test_defeated_carries_the_kind_of_the_defeated_enemy_for_the_shooter() -> void:
+	# 射撃型で発火の引数を見る: 上のケースは基底の `kind()` が返す CHARGER と一致してしまい、
+	# `defeated.emit(kind())` を `defeated.emit(EnemyKind.Kind.CHARGER)` へ縮退させる変異を
+	# 落とせない。`kind()` 単体を見るケース(下の 2 種を並べるもの)も、発火の引数と `kind()` の
+	# 結び付きは見ていない。撃破の受け手は引数の種別で分岐する
+	var shooter: ShooterEnemy = auto_free(SHOOTER_SCENE.instantiate())
+	# シーンが指す `shooter_stats.tres` を書き換えない: 1 個を全個体で共有する
+	shooter.stats = _create_stats()
+	var emissions: Array = []
+	shooter.defeated.connect(func(kind: int) -> void: emissions.append(kind))
+
+	shooter.take_damage(MAX_HP)
+
+	assert_array(emissions).is_equal([EnemyKind.Kind.SHOOTER])
+
+
 func test_defeated_is_not_emitted_while_the_hp_remains() -> void:
 	var enemy: Enemy = _create_enemy()
 	var emissions: Array = []
