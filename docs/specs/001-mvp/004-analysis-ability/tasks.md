@@ -214,7 +214,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   撃破の配線を除いた「能力を持ってから撃ち切るまで」を縦に貫くスライス。3 つのサブタスクはいずれも `src/player/player.gd` を触るため順に進める。
 
-  - [ ] 4.1 `ability_slot` の生成と `grant_ability()` を実装する
+  - [x] 4.1 `ability_slot` の生成と `grant_ability()` を実装する
     _Requirements: 7.1, 7.2, 7.3, 7.5, 7.9, 7.10, 8.6_
     _Boundary: Player_
     _Depends: 1.3, 2.3_
@@ -466,4 +466,14 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - `.tscn` に `.uid` は生成されなかった(Godot 4.7.1 はシーンの uid を `[gd_scene]` 行に持つ)。`[ext_resource]` に `uid=` は書いていない。**タスク 6.2・6.3 でエディタを使う場合は保存し直さないこと**(保存すると `uid=` が書き戻される。差分に混ざったら記法の揺れとして扱う)。
   - `main.tscn` の `Background`(0.05, 0.058, 0.086, 1)は spec.md §7 4.16 が比較対象を明示的に限定しているため対象外である(選んだ色はこれとも重ならない)。
   - タスク 3.3 の完了時点で `make test` 全体は **499 test cases / 31 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 4.1 の成果と 4.2・4.3 への申し送り**:
+  - **`ability_slot` の生成は `_ensure_ability_slot()`(`ability_slot != null` の自前ガード)に閉じてある。** 呼び出し元は `grant_ability()` と `_ensure_weapons()` の 2 箇所で、`_ensure_weapons()` の**早期 return より前**に置いてある。早期 return は `_primary_weapon` を見ており、枠の生成を同じガードへ載せると「`grant_ability()` → 最初のフレーム」の順で取得が捨てられる(変異注入で実測。`test_the_granted_slot_survives_the_frames_that_follow_the_grant` の 1 ケースだけが落とす)。**この呼び出し位置を動かさないこと。**
+  - `grant_ability()` は `stats.ability_uses` を**毎回読み直す**。`AbilitySlot` の `cooldown` は生成時に 1 度だけ渡すため、**`stats.ability_cooldown` を途中で変えても既存の枠には反映されない**(既存の `PrimaryWeapon.new(stats.primary_interval)` と同じ扱い。レビュアーが要件 7.10 と矛盾しないことを確認済み)。4.2 で cooldown を差し替えるテストを書く場合は `grant_ability()` より前に設定すること。
+  - テストの定数は `FRAME_DELTA = 0.0625` / `ABILITY_COOLDOWN = 0.25`(= 4 フレーム)/ `ABILITY_USES = 4` / `REGRANT_USES = 6` / `ABILITY_DAMAGE = 27` / `ABILITY_BULLET_SPEED = 180.0`、他の周期は `primary_interval = 0.5` / `secondary_charge_time = 0.75` / `secondary_cooldown = 1.0`。`test_the_values_used_here_differ_from_the_defaults` が番人。**4.2 で `secondary_cooldown` を差し替えるときも `ABILITY_COOLDOWN` と別の値に取ること。**
+  - **「`Player` が毎フレーム `ability_slot.update()` を呼ぶ」ことは 4.1 のスイートでは一切観測されていない**(発射ヘルパが `update()` を直接回している)。**タスク 4.2 の要件 5.3 のケースがその唯一の番人になる**(レビュアーの指摘)。
+  - **GDScript は行頭ドットでのメソッド連鎖の継続を許さない**(`assert_array(...)` の次行に `.not_contains(...)` を置くと `Parse Error: Expected statement, found "."`)。長い連鎖は中間変数へ分けること。
+  - `Player` を `instantiate()` してツリーへ載せない限り `_ready()` は走らないため `_report_non_positive_stats()` の `push_error` も出ない。7.9 のケースはこれを利用している。
+  - レビュアーが 10 種の変異注入を独立に実測し、すべて死亡することを確認した。
+  - **[Nit] 未対処(記録のみ)**: `_ensure_weapons()` の名前と責務(武器 + 第 3 の枠)のずれ。`_update_weapons()` の側から `_ensure_weapons()` と `_ensure_ability_slot()` を並べて呼ぶ形のほうが一貫する。**4.2 で `_update_weapons()` に手を入れる際の検討事項**。また `_press_after_frames()` は `frames` が 0 のとき無音で 0 回ループする(現在の呼び出し元は 3 と 4 のみ)。
+  - タスク 4.1 の完了時点で `make test` 全体は **512 test cases / 32 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。

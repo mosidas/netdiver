@@ -25,6 +25,10 @@ const MISSING_PROJECTILE_SCENE_ERROR: String = (
 ## 体力。待機時間の計測と回復の進行は `Health` が持ち、`Player` は経過時間を自分で持たない
 var health: Health
 
+## 第 3 の武器枠。残り回数とクールダウンの進行は `AbilitySlot` が持ち、`Player` は
+## 戻り値を読むだけで状態を自分で持たない。外から読める観測点として公開する
+var ability_slot: AbilitySlot
+
 var facing: int = 1
 
 ## 入力の差し替え点。headless では `InputEvent` がエンジンを通らず `Input` を経由した
@@ -80,6 +84,15 @@ func take_damage(amount: int) -> void:
 	health.take_damage(amount)
 
 
+## 第 3 の枠へ能力を与える。残り回数は `stats.ability_uses` で置き換わる。
+##
+## 種別を引数に取らない: 写せるかどうかの判断は `AbilityAnalysis` にあり、`Player` は
+## 判断の結果だけを受け取る
+func grant_ability() -> void:
+	_ensure_ability_slot()
+	ability_slot.grant(stats.ability_uses)
+
+
 func _physics_process(delta: float) -> void:
 	var cmd: PlayerCommand = input_source.call()
 	apply_command(cmd, delta, is_on_floor())
@@ -115,10 +128,22 @@ func _on_health_depleted() -> void:
 # 武器を `_ready()` で作らない: `apply_command()` はツリーへ載せずに呼べる契約であり、
 # `_ready()` を通らない呼び出しで武器が null になる
 func _ensure_weapons() -> void:
+	# 生成を `_ensure_ability_slot()` に分ける: 下の早期 return は `_primary_weapon` を見ており、
+	# 同じガードへ載せると `grant_ability()` が先に作った枠を作り直して取得を捨てる
+	_ensure_ability_slot()
+
 	if _primary_weapon != null:
 		return
 	_primary_weapon = PrimaryWeapon.new(stats.primary_interval)
 	_secondary_weapon = SecondaryWeapon.new(stats.secondary_charge_time, stats.secondary_cooldown)
+
+
+# 第 3 の枠を `_ready()` で作らない: `grant_ability()` はツリーへ載せずに呼べる契約であり、
+# `_ready()` を通らない呼び出しで ability_slot が null になる
+func _ensure_ability_slot() -> void:
+	if ability_slot != null:
+		return
+	ability_slot = AbilitySlot.new(stats.ability_cooldown)
 
 
 func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_secondary: bool) -> void:
