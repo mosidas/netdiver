@@ -60,6 +60,11 @@ func update(held: bool, delta: float) -> bool:
 	if not is_edge:
 		return false
 
+	# 押下の記録より前へ出さない: 前へ出すと空の間の押下が記録されず、取得の時点で
+	# 押しっぱなしのボタンが次のフレームで縁と誤認される
+	if is_empty:
+		return false
+
 	if _cooldown_elapsed < _cooldown:
 		return false
 

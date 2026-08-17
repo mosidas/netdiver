@@ -13,6 +13,10 @@ const LARGER_USES: int = 7
 const SMALLER_USES: int = 2
 const SINGLE_USE: int = 1
 
+# 残り 1 の状態を grant(1) で作らないための回数: grant() の引数と最終値が一致すると、
+# 減算しない実装が素通りする。この回数から撃ち下ろして残り 1 を作る
+const SPEND_DOWN_USES: int = 4
+
 # 拒否する呼び出しには、成功する呼び出しと別の値を渡す。0 と負の両方を置く:
 # 片側だけでは、もう片側を素通りさせるガードが残る
 const INVALID_USES: Array[int] = [0, -3]
@@ -24,6 +28,21 @@ const FIRE_THEN_PRESS_ONE_FRAME_EARLY: Array[bool] = [true, false, false, true]
 
 # 押しっぱなしのまま境界を跨ぐ列。縁を見ない実装は 5 フレーム目で 2 発目を出す
 const HELD_PAST_THE_COOLDOWN: Array[bool] = [true, true, true, true, true, true]
+
+# 縁を繰り返し与える列。後半の縁はクールダウンの境界の外側にあり、残り回数のガードだけが
+# 発射を止めている。ガードを外した実装はここで残り回数を負へ進める
+const REPEATED_EDGES: Array[bool] = [true, false, true, false, true, false, true, false, true]
+const NO_FIRE_WHILE_EMPTY: Array[Array] = [
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+	[false, 0],
+]
 
 # 実装の文言を固定する: 文言が変わると、利用者がログから原因を辿る手順が変わる
 const INVALID_USES_ERROR_FORMAT: String = (
@@ -55,7 +74,7 @@ func test_the_values_used_here_differ_from_the_defaults() -> void:
 	var stats: PlayerStats = auto_free(PlayerStats.new())
 
 	assert_float(stats.ability_cooldown).is_not_equal(COOLDOWN)
-	assert_array([FIRST_USES, LARGER_USES, SMALLER_USES, SINGLE_USE]).not_contains(
+	assert_array([FIRST_USES, LARGER_USES, SMALLER_USES, SINGLE_USE, SPEND_DOWN_USES]).not_contains(
 		[stats.ability_uses]
 	)
 
@@ -337,4 +356,101 @@ func test_the_cooldown_measures_elapsed_time_rather_than_frame_count() -> void:
 
 	assert_array(steps).is_equal(
 		[[true, FIRST_USES - 1], [false, FIRST_USES - 1], [true, FIRST_USES - 2]]
+	)
+
+
+# 残り回数だけを偽にしたケース(縁であり、後半の縁ではクールダウンも明けている)。
+# 残り回数のガードを持たない実装は、ここで真を返し残り回数を負へ進める
+func test_an_empty_slot_never_fires_however_often_it_is_pressed() -> void:
+	var slot: AbilitySlot = auto_free(AbilitySlot.new(COOLDOWN))
+
+	var steps: Array[Array] = _run(slot, REPEATED_EDGES)
+
+	assert_array(steps).is_equal(NO_FIRE_WHILE_EMPTY)
+	assert_int(slot.remaining_uses).is_equal(0)
+	assert_bool(slot.is_empty).is_true()
+
+
+# 撃って空にした枠でも同じ。生成直後の枠だけで見ると、発射の経路が残す状態
+# (負の残り回数)を見逃す
+func test_a_slot_emptied_by_shooting_never_fires_again() -> void:
+	var slot: AbilitySlot = auto_free(AbilitySlot.new(COOLDOWN))
+	slot.grant(SMALLER_USES)
+	for shot: int in SMALLER_USES:
+		_fire(slot)
+
+	var steps: Array[Array] = _run(slot, REPEATED_EDGES)
+
+	assert_array(steps).is_equal(NO_FIRE_WHILE_EMPTY)
+	assert_int(slot.remaining_uses).is_equal(0)
+	assert_bool(slot.is_empty).is_true()
+
+
+# 最後の 1 発で空へ移る。残り 1 を grant() で作らず撃ち下ろして作る:
+# grant() の引数と最終値が一致すると、減らさない実装が素通りする
+func test_the_shot_that_spends_the_last_use_turns_the_slot_empty() -> void:
+	var slot: AbilitySlot = auto_free(AbilitySlot.new(COOLDOWN))
+	slot.grant(SPEND_DOWN_USES)
+	var shots: Array[Array] = []
+
+	for shot: int in SPEND_DOWN_USES:
+		shots.append([_fire(slot), slot.remaining_uses, slot.is_empty])
+
+	assert_array(shots).is_equal(
+		[
+			[true, SPEND_DOWN_USES - 1, false],
+			[true, SPEND_DOWN_USES - 2, false],
+			[true, SPEND_DOWN_USES - 3, false],
+			[true, 0, true],
+		]
+	)
+
+
+# 空の間の押下も次のフレームの縁の判定へ持ち越される。取得の直後の 1 フレーム目が
+# 偽であること(押しっぱなし)と、離してから押すと真になることを 1 つの列で対にする:
+# 前半だけでは「常に偽を返す」実装が、後半だけでは「記録しない」実装が素通りする
+func test_a_button_held_while_empty_is_not_an_edge_after_a_grant() -> void:
+	var slot: AbilitySlot = auto_free(AbilitySlot.new(COOLDOWN))
+	var steps: Array[Array] = _run(slot, [true, true, true])
+
+	slot.grant(FIRST_USES)
+	steps.append_array(_run(slot, [true]))
+	steps.append_array(_run(slot, [false, true]))
+
+	assert_array(steps).is_equal(
+		[
+			[false, 0],
+			[false, 0],
+			[false, 0],
+			[false, FIRST_USES],
+			[false, FIRST_USES],
+			[true, FIRST_USES - 1],
+		]
+	)
+
+
+# 押しっぱなしの最中に取得しても、ボタンがいったん偽になるまで撃てない。
+# 押しっぱなしの側はクールダウンの境界を跨いで見る: 短い列だけだと、
+# 止めているのがクールダウンなのか縁なのかを区別できない
+func test_a_grant_during_a_hold_does_not_fire_until_the_button_is_released() -> void:
+	var slot: AbilitySlot = auto_free(AbilitySlot.new(COOLDOWN))
+	var steps: Array[Array] = _run(slot, [true, true])
+
+	slot.grant(LARGER_USES)
+	steps.append_array(_run(slot, HELD_PAST_THE_COOLDOWN))
+	steps.append_array(_run(slot, [false, true]))
+
+	assert_array(steps).is_equal(
+		[
+			[false, 0],
+			[false, 0],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[false, LARGER_USES],
+			[true, LARGER_USES - 1],
+		]
 	)
