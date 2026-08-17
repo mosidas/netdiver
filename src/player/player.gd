@@ -107,7 +107,17 @@ func _update_weapons(cmd: PlayerCommand, direction: Vector2i, delta: float) -> v
 	if cmd.primary_held and _primary_weapon.try_fire():
 		_spawn_projectile(direction, stats.primary_bullet_speed, stats.primary_damage, false)
 
-	if _secondary_weapon.update(cmd.secondary_held, delta):
+	# 占有しているかどうかを `update()` の前に控える: 後の値で判定すると、最後の 1 回を
+	# 撃ったフレームでその押下が第 3 の枠と副武器の両方に効く
+	var is_slot_empty: bool = ability_slot.is_empty
+	# 空のフレームでも呼ぶ: 呼ばないと押下の記録が飛び、取得の時点で押しっぱなしの
+	# ボタンが次のフレームで縁と誤認される
+	ability_slot.update(cmd.secondary_held, delta)
+
+	# 占有中は「離した」を渡す: 凍結する形にするとクールダウンが実時間で進まず、
+	# 満たなかった充電が占有をまたいで持ち越される
+	var secondary_held: bool = cmd.secondary_held and is_slot_empty
+	if _secondary_weapon.update(secondary_held, delta):
 		_spawn_projectile(direction, stats.secondary_bullet_speed, stats.secondary_damage, true)
 
 
