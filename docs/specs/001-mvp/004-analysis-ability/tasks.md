@@ -387,7 +387,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 10.1(`PlayerCommand`)・10.2 と 10.6 と 9.22(`project.godot`)・10.4(`PrimaryWeapon`・`SecondaryWeapon`・`Projectile`)・10.5(`Enemy.defeated`)・10.7(unit #1〜#3 の文書)・10.8(既存のテスト)・9.21(既存の 2 つの仮ステージ)は、この 1 つのコマンドがまとめて示す
       - **10.3(`fired` の引数)と 8.7(既存 14 項目の既定値)は差分では固定できない**(`player.gd` と `player_stats.gd` は変更するため)。10.3 は宣言行の完全一致で、8.7 は既存の `tests/player/player_stats_test.gd` が緑のままであることで示す。あわせて **6.7 / 6.8 の振る舞いのテスト**(タスク 4.3)が `fired` の意味の非変更を担保する旨をコミット本文に記す
       - 9.24(ファイルの配置)は、実装が `src/ability/` と `src/stage/` に、テストが `tests/ability/`・`tests/player/`・`tests/stage/` にあり、`src/` の下にテストが 1 本も無いことで示す
-      - 10.9 は `make test` の全体が緑であることで示す。**判定基準を緩めて緑にしない**(既存のテストの削除・スキップ・弱体化を行わない)。unit #3 の完了時点の基線は 405 test cases / 0 errors / 0 failures / 0 skipped / 0 orphans であり、本単位の追加分だけ件数が増えていること・skipped と orphans が 0 のままであることを確認する
+      - 10.9 は `make test` の全体が緑であることで示す。**判定基準を緩めて緑にしない**(既存のテストの削除・スキップ・弱体化を行わない)。unit #3 の完了時点の基線は 407 test cases / 0 errors / 0 failures / 0 skipped / 0 orphans であり、本単位の追加分だけ件数が増えていること・skipped と orphans が 0 のままであることを確認する
       - 差分が出た場合は `git revert` ではなく、当該の変更が本単位の受け入れ基準に必要だったかを判断する。必要だった場合は spec.md §6.7 との矛盾であり、**自分で spec.md を直さず上流へ差し戻す**
     - 検証コマンド: `test -z "$(git diff --name-only --diff-filter=MDR 5b4e240 -- src tests project.godot docs/specs/001-mvp/001-test-harness docs/specs/001-mvp/002-foot-player docs/specs/001-mvp/003-foot-enemies ':!src/player/player.gd' ':!src/player/player_stats.gd')" && echo FROZEN_OK`、`grep -qx 'signal fired(direction: Vector2i, is_secondary: bool)' src/player/player.gd && echo SIGNAL_OK`、`test -z "$(find src -name '*_test.gd')" && echo LAYOUT_OK`、`make test`
 
@@ -401,6 +401,6 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 ### 実装開始時の基準点
 
-- unit #3 の完了時点の `make test` の基線: 405 test cases / 0 errors / 0 failures / 0 skipped / 0 orphans(unit #3 の `tasks.md` の記録。**実装開始時に再実測して基線を更新すること** — 前セッションの報告を信用せず再実行する、が unit #3 の申し送りである)。
+- unit #3 の完了時点の `make test` の基線: 407 test cases / 25 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans(PR #10 のマージ後と本単位の Step 0 の 2 回、独立に実測した値。**実装開始時に再実測して基線を更新すること** — 前セッションの報告を信用せず再実行する、が unit #3 の申し送りである)。
 - 凍結の検査(タスク 7.1 の 1 つ目のコマンド)は実装開始時点で空を返すことを確認済み。
 - テストの書き方の規約は `docs/testing.md` にある。既存の `tests/` 配下の同種のテストを手本にする(シーン構成は `tests/stage/enemy_dev_stage_test.gd`、武器の振る舞いは `tests/player/player_weapon_test.gd`、純ロジックは `tests/enemy/charger_brain_test.gd`)。
