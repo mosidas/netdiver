@@ -100,7 +100,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 3.5「種別による分岐を `AbilityAnalysis` の外に置いてはならない」は静的な検査だけで示さない。`src/player/` と `src/stage/analysis_dev_stage.gd` が `EnemyKind` を参照しないことを確かめる検査に加えて、**振る舞い側の対**として要件 9.12(ハンドラが種別で分岐せず両方の種別で演出を生成する)と 7.7(突進型の到達で枠が変わらない)をタスク 5.1 が持つ。本サブタスクでは静的な検査の側だけを置き、その旨をコメントに残す
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-  - [ ] 1.3 (P) `PlayerStats` へ能力の 4 項目を足す
+  - [x] 1.3 (P) `PlayerStats` へ能力の 4 項目を足す
     _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.7_
     _Boundary: PlayerStats_
     - 対象ファイル: `src/player/player_stats.gd`(変更), `tests/player/player_ability_stats_test.gd`(新規)
@@ -417,4 +417,9 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **実装が存在しない状態で `class_name` を参照するテストを走らせると、gdUnit4 は assertion の失敗ではなく終了コード 134(探索中のスクリプトエラー)でクラッシュする。** RED を失敗として観測したい場合は、先に最小のスタブを置いてから実行する。
 - **タスク 1.2 の成果と 5.1 への申し送り**: `tests/ability/ability_analysis_test.gd` の `test_the_analysis_dev_stage_source_does_not_name_the_enemy_kind` は、`src/stage/analysis_dev_stage.gd` が**無い間はその不在を `assert_bool(FileAccess.file_exists(...)).is_false()` で固定**する形になっている。5.1 でこのファイルを作った時点で検査は自動的に `not_contains("EnemyKind")` の経路へ入る(テスト側の書き換えは不要)が、**5.1 では空振り経路を通っていないことを一度確認すること**。
 - **要件 3.5 の振る舞い側の対はタスク 5.1 が持つ**(9.12 = ハンドラが種別で分岐せず両方の種別で演出を生成する、7.7 = 突進型の到達で枠が変わらない)。1.2 は静的な検査の側だけを置いた。
+- **タスク 1.3 の成果と後続への申し送り**:
+  - 4 項目は `bullet_max_distance` の**後ろ**に足した(差分を純粋な追記に保つため)。`player.gd` は無変更である。
+  - `Player._report_non_positive_stats()` は `PROPERTY_USAGE_EDITOR` かつ `PROPERTY_USAGE_SCRIPT_VARIABLE` で絞るため、**`@export` を付けない内部項目は検査に載らない**。
+  - **`assert_error(...).is_push_error()` は `await` を付け忘れると常に緑になる。** `add_child()` が引き起こす `_ready()` の `push_error` を捕まえられる。
+  - `PlayerStats` を継承した内部クラス(`@export var unknown_stat`)で「項目名を列挙していないこと」を示す型は `Player` でも機能する。タスク 4.x でも同じ手が使える。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
