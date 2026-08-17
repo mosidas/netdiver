@@ -158,7 +158,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - このサブタスクの完了時点で `AbilitySlot` の 15 基準がすべて緑であること。タスク 4 はこの状態機械を前提に組む
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-- [ ] 3. (P) `AnalysisPulse`(解析の演出)
+- [x] 3. (P) `AnalysisPulse`(解析の演出)
 
   撃破位置からプレイヤーへ飛ぶ placeholder。**3 つの経路で自己解放する**契約(到達・標的の消失・事前条件違反)を持つ(上流からの申し送り 1)。
 
@@ -196,7 +196,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 4.11(`Engine.time_scale` と `SceneTree.paused` を変更しない)も静的な検査だけで示さない。**`Engine.time_scale` を既定と別の値へ設定してから** 3 経路を通し、通した後も同じ値であること・`get_tree().paused` が偽のままであることを見る(既定値のまま見ると、既定値へ代入する変異が素通りする)。テストの後で必ず元へ戻す
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-  - [ ] 3.3 (P) `analysis_pulse.tscn` を作る
+  - [x] 3.3 (P) `analysis_pulse.tscn` を作る
     _Requirements: 4.10, 4.15, 4.16_
     _Boundary: AnalysisPulse_
     _Depends: 3.1_
@@ -459,4 +459,11 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - `Engine.time_scale` を触るケースは `before_test()` で控えて `after_test()` で戻す形にした(本スイートに初めて `before_test`/`after_test` を置いた)。同じスイートに実フレームで駆動するケース(`await_millis`)があるため、戻し漏れは他のケースを壊す。
   - レビュアーが 13 種の変異注入を独立に実測し、すべて死亡することを確認した。**等価変異が 1 つある**(消失の経路の `_is_flying = false` の単独削除は `queue_free()` が残る限りフレーム終端で解放されるため落ちない)。記録のみで対処しない。
   - タスク 3.2 の完了時点で `make test` 全体は **492 test cases / 30 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 3.3 の成果と 5.2・5.3・6.2 への申し送り**:
+  - **`AnalysisPulse` の `ColorRect` の色は `Color(0.55, 0.95, 0.6, 1)`(緑)**である。既存 8 色のどれとも系統が違う。
+  - 4.16 の比較は 8 つのシーンを `instantiate()` して `ColorRect` を再帰で集め、**色の集合の非包含**で書いてある。比較対象は `tests/ability/analysis_pulse_scene_test.gd` 冒頭の `EXISTING_PLACEHOLDER_SCENE_PATHS`(8 本の固定リスト)。レビュアーが集合の実体を probe で数え、spec.md §7 4.16 の 6 シーン + 地形 2 色を過不足なく覆うことを確認した。**タスク 5.2・5.3 の新しい仮ステージが新しい色を持つ場合だけこの定数へ追記すること**(既存と同じ色を写す限り追随は不要)。
+  - 地形の 2 色の取りこぼしの番人として `test_the_compared_colors_cover_both_terrain_colors_of_the_dev_stages` を置いた。足場の色を `dev_stage.tscn` から読み、集合に含まれることと足場が床と別の色であること(番人が空振りしていないこと)を対で見ている。レビュアーが「比較の配列から `dev_stage.tscn` を落とし、かつ色を足場色にする」複合変異でこの番人が落ちることを実測した。
+  - `.tscn` に `.uid` は生成されなかった(Godot 4.7.1 はシーンの uid を `[gd_scene]` 行に持つ)。`[ext_resource]` に `uid=` は書いていない。**タスク 6.2・6.3 でエディタを使う場合は保存し直さないこと**(保存すると `uid=` が書き戻される。差分に混ざったら記法の揺れとして扱う)。
+  - `main.tscn` の `Background`(0.05, 0.058, 0.086, 1)は spec.md §7 4.16 が比較対象を明示的に限定しているため対象外である(選んだ色はこれとも重ならない)。
+  - タスク 3.3 の完了時点で `make test` 全体は **499 test cases / 31 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
