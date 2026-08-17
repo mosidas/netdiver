@@ -179,7 +179,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 4.6 の「解放」の観測は `await await_idle_frame()` の後に `is_instance_valid()` を読む形で足りる(unit #3 タスク 2.1 の申し送り)。順序(発火が解放より先)は `arrived` の受け手の中で `is_queued_for_deletion()` が偽であることを控えて固定する
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-  - [ ] 3.2 (P) 残る 2 つの自己解放の経路と「しないこと」を実装する
+  - [x] 3.2 (P) 残る 2 つの自己解放の経路と「しないこと」を実装する
     _Requirements: 4.8, 4.9, 4.11, 4.14_
     _Boundary: AnalysisPulse_
     _Depends: 3.1_
@@ -451,4 +451,12 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - 本タスクの時点で `AnalysisPulse` は `.tscn` を持たないため、テストは `AnalysisPulse.new()` で生成している。3.3 でシーンができた後もこのスイートは `.new()` のままでよい。
   - レビュアーが 11 種の変異注入を実測し、すべて死亡することを確認した(境界の緩め・標的位置の凍結・状態の共有・`_process` への移動・`flight_time` の直書き・`launch` の位置設定の削除・emit と解放の順の入替・定数 `kind`・解放の削除・`PlayerStats` への `flight_time` 追加)。
   - タスク 3.1 の完了時点で `make test` 全体は **485 test cases / 30 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 3.2 の成果と 3.3・5.1 への申し送り**:
+  - **`launch()` に届く「無効な標的」は `null` だけである。** Godot 4.7.1 は解放済みのオブジェクトを `to: Node2D` の引数の型検査で弾き(`The Object-derived class of argument 1 (previously freed) is not a subclass of the expected argument class.`)、関数の本体へ入らない。さらにラムダが解放済みの値を捕らえると呼び出し時に `null` へ差し替える(`Lambda capture at index 0 was freed. Passed "null" instead.`)。レビュアーが使い捨てプロジェクトで独立に再現済み。したがって 4.9 のテストは `null` の 1 形だけでよい。**5.1 の配線でも、撃破した敵をそのまま渡す経路は「解放済み」ではなく「その物理フレームではまだ有効」であることを前提にしてよい。** 飛行中に敵が消える場合は経路 B(4.8)が受ける。
+  - **`_physics_process` の 3 つのガードの順は契約そのものである**: `_is_flying` → **標的の有効性** → 到達の判定。標的の判定を到達より後ろへ動かすと、標的が消えたフレームでも `arrived` が出る(受け手が居ない)。この順を崩さないこと。
+  - **4.8(標的の消失は報告しない)と 4.9(事前条件違反は報告する)の非対称**が契約である。消失の経路に `push_error` を足す変異は経路 B の 2 ケースが落とす。
+  - `AnalysisPulse` の `push_error` の文言は `INVALID_FLIGHT_TIME_ERROR_FORMAT` と `INVALID_TARGET_ERROR` の 2 つ。テスト側は文言の複製を持つ。
+  - `Engine.time_scale` を触るケースは `before_test()` で控えて `after_test()` で戻す形にした(本スイートに初めて `before_test`/`after_test` を置いた)。同じスイートに実フレームで駆動するケース(`await_millis`)があるため、戻し漏れは他のケースを壊す。
+  - レビュアーが 13 種の変異注入を独立に実測し、すべて死亡することを確認した。**等価変異が 1 つある**(消失の経路の `_is_flying = false` の単独削除は `queue_free()` が残る限りフレーム終端で解放されるため落ちない)。記録のみで対処しない。
+  - タスク 3.2 の完了時点で `make test` 全体は **492 test cases / 30 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。

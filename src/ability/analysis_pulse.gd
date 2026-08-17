@@ -8,6 +8,14 @@ extends Node2D
 
 signal arrived(kind: int)
 
+const INVALID_FLIGHT_TIME_ERROR_FORMAT: String = (
+	"AnalysisPulse.launch(): flight_time は正でなければならない(現在値: %s)。"
+	+ "arrived を発火せずに演出を解放する"
+)
+const INVALID_TARGET_ERROR: String = (
+	"AnalysisPulse.launch(): to は有効なノードでなければならない。arrived を発火せずに演出を解放する"
+)
+
 ## プレイヤーの数値の集約側へ移さない: 演出の見え方を決める値であり、
 ## プレイヤーの手触りを決める値ではない
 @export var flight_time: float = 0.4
@@ -24,9 +32,22 @@ var _is_flying: bool = false
 
 ## 演出を `from` から `to` へ飛ばす。
 ##
+## 事前条件: `flight_time` は正、`to` は有効なノード。満たさない場合は `push_error` を出し、
+## `arrived` を発火せずに自身を解放する(残しておくと、動かない矩形が画面に居座る)
+##
 ## 事後条件: 呼び出しの直後の位置は `from` であり、`flight_time` の経過で `arrived` が
 ## 1 回だけ出る
 func launch(kind: int, from: Vector2, to: Node2D) -> void:
+	if flight_time <= 0.0:
+		push_error(INVALID_FLIGHT_TIME_ERROR_FORMAT % flight_time)
+		queue_free()
+		return
+
+	if not is_instance_valid(to):
+		push_error(INVALID_TARGET_ERROR)
+		queue_free()
+		return
+
 	_kind = kind
 	_from = from
 	_target = to
@@ -38,6 +59,14 @@ func launch(kind: int, from: Vector2, to: Node2D) -> void:
 
 func _physics_process(delta: float) -> void:
 	if not _is_flying:
+		return
+
+	# 標的の有効性を到達の判定より後ろに置かない: 後ろだと、標的が消えたフレームでも
+	# 経過が満ちていれば `arrived` が出る。撃破の報告を受け取る相手が既に居ない
+	if not is_instance_valid(_target):
+		_is_flying = false
+		# `push_error` を出さない: 標的の消失は配線の誤りではなく戦闘の途中で普通に起きる
+		queue_free()
 		return
 
 	_elapsed += delta

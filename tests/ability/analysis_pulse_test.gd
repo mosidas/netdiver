@@ -38,10 +38,43 @@ const TARGET_STEP: Vector2 = Vector2(3.0, -2.0)
 
 const KINDS: Array[int] = [EnemyKind.Kind.CHARGER, EnemyKind.Kind.SHOOTER]
 
+# `push_error` の文言はテストの側に複製を持つ: 実装の定数を参照すると、文言を変える変異が
+# 自己成就して落ちない
+const INVALID_FLIGHT_TIME_ERROR_FORMAT: String = (
+	"AnalysisPulse.launch(): flight_time は正でなければならない(現在値: %s)。"
+	+ "arrived を発火せずに演出を解放する"
+)
+const INVALID_TARGET_ERROR: String = (
+	"AnalysisPulse.launch(): to は有効なノードでなければならない。arrived を発火せずに演出を解放する"
+)
+
+# 事前条件を破る飛行時間。0 と負の両方を置く: 片方だけだと、比較を `< 0` へ緩める変異が素通りする
+const INVALID_FLIGHT_TIMES: Array[float] = [0.0, -0.5]
+
+# 標的を失うフレーム。到達のフレームより十分手前に取る: 到達のフレームちょうどで失うケースとは
+# 別の分岐を通す
+const TARGET_LOST_FRAME: int = 3
+
+const DEFAULT_TIME_SCALE: float = 1.0
+# 既定と別の値を置いてから 3 経路を通す: 既定のまま見ると、`Engine.time_scale` へ既定値を
+# 代入する変異が素通りする
+const OTHER_TIME_SCALE: float = 0.5
+
 # 数フレーム(60 Hz で 1 フレーム約 17 ms)に対して余裕を取る: CI のランナーが遅い場合でも
 # 到達まで物理フレームを消化させる
 const WAIT_MILLIS: int = 500
 const TOLERANCE: Vector2 = Vector2(0.001, 0.001)
+
+var _saved_time_scale: float = DEFAULT_TIME_SCALE
+
+
+func before_test() -> void:
+	_saved_time_scale = Engine.time_scale
+
+
+func after_test() -> void:
+	# 失敗した回にも戻す: 残ると、実フレームで駆動する他のケースの進み方が変わる
+	Engine.time_scale = _saved_time_scale
 
 
 func _frame_delta() -> float:
@@ -52,11 +85,15 @@ func _flight_time(frames: int) -> float:
 	return _frame_delta() * frames
 
 
-func _create_pulse(frames: int) -> AnalysisPulse:
+func _create_pulse_with(flight_time: float) -> AnalysisPulse:
 	var pulse: AnalysisPulse = auto_free(AnalysisPulse.new())
 	# 既定値を渡さない: 既定のままだと、`flight_time` を読まずに 0.4 を直書きする実装も緑になる
-	pulse.flight_time = _flight_time(frames)
+	pulse.flight_time = flight_time
 	return pulse
+
+
+func _create_pulse(frames: int) -> AnalysisPulse:
+	return _create_pulse_with(_flight_time(frames))
 
 
 # エンジンの物理フレームと手で回すフレームを混ぜない: 混ざると到達のフレームを数えられない
@@ -70,6 +107,18 @@ func _create_target(at: Vector2) -> Node2D:
 	add_child(target)
 	target.global_position = at
 	return target
+
+
+func _release_target(target: Node2D) -> void:
+	target.queue_free()
+	# 解放の反映を待ってから進める: 待たずに進めると、標的はまだ有効なままである
+	await await_idle_frame()
+	assert_bool(is_instance_valid(target)).is_false()
+
+
+func _assert_the_time_stays_untouched(context: String) -> void:
+	assert_float(Engine.time_scale).append_failure_message(context).is_equal(OTHER_TIME_SCALE)
+	assert_bool(get_tree().paused).append_failure_message(context).is_false()
 
 
 func _advance(pulse: AnalysisPulse, frames: int) -> void:
@@ -345,3 +394,197 @@ func test_the_engine_drives_the_pulse_over_real_physics_frames() -> void:
 	assert_array(arrival_positions).has_size(1)
 	assert_vector(arrival_positions[0]).is_equal_approx(TARGET_POSITION, TOLERANCE)
 	assert_bool(is_instance_valid(pulse)).is_false()
+
+
+func test_the_arrival_path_releases_the_pulse_without_reporting_an_error() -> void:
+	# 経路 A(到達)の 3 つ組 [arrived の回数, 解放, push_error] = [1, 解放, なし]
+	var target: Node2D = _create_target(TARGET_POSITION)
+	var pulse: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(pulse)
+	var kinds: Array[int] = []
+	_record_kinds(pulse, kinds)
+	# 解放が同じ物理フレームの中で即座に起きていないことを、到達と同じ実行の中で控える
+	var valid_right_after: Array[bool] = []
+	var arrival_frames: Callable = func() -> void:
+		_advance(pulse, FLIGHT_FRAMES)
+		valid_right_after.append(is_instance_valid(pulse))
+
+	pulse.launch(EnemyKind.Kind.CHARGER, FROM, target)
+
+	await assert_error(arrival_frames).is_success()
+
+	assert_array(kinds).is_equal([EnemyKind.Kind.CHARGER])
+	# `free()` へ変える変異はこの対で落ちる: 即座の解放だと真にならない
+	assert_array(valid_right_after).is_equal([true])
+
+	await await_idle_frame()
+
+	assert_bool(is_instance_valid(pulse)).is_false()
+
+
+func test_the_pulse_releases_itself_when_the_target_is_lost_mid_flight() -> void:
+	# 経路 B(標的の消失)の 3 つ組 = [0, 解放, なし]
+	var target: Node2D = _create_target(TARGET_POSITION)
+	var pulse: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(pulse)
+	var kinds: Array[int] = []
+	_record_kinds(pulse, kinds)
+	var valid_right_after: Array[bool] = []
+	var next_frame: Callable = func() -> void:
+		pulse._physics_process(_frame_delta())
+		valid_right_after.append(is_instance_valid(pulse))
+
+	pulse.launch(EnemyKind.Kind.SHOOTER, FROM, target)
+	_advance(pulse, TARGET_LOST_FRAME)
+	await _release_target(target)
+
+	# 標的の消失は戦闘の途中で普通に起きる経路であり報告しない
+	await assert_error(next_frame).is_success()
+
+	assert_array(kinds).is_empty()
+	assert_array(valid_right_after).is_equal([true])
+
+	await await_idle_frame()
+
+	assert_bool(is_instance_valid(pulse)).is_false()
+
+
+func test_the_pulse_releases_itself_when_the_target_is_lost_on_the_arrival_frame() -> void:
+	# 経路 B の境界。到達の判定を標的の有効性の判定より前へ移す変異はここで落ちる
+	var target: Node2D = _create_target(TARGET_POSITION)
+	var pulse: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(pulse)
+	var kinds: Array[int] = []
+	_record_kinds(pulse, kinds)
+	var valid_right_after: Array[bool] = []
+	var arrival_frame: Callable = func() -> void:
+		pulse._physics_process(_frame_delta())
+		valid_right_after.append(is_instance_valid(pulse))
+
+	pulse.launch(EnemyKind.Kind.SHOOTER, FROM, target)
+	_advance(pulse, FLIGHT_FRAMES - 1)
+
+	# 標的を失う直前は未到達である
+	assert_array(kinds).is_empty()
+
+	await _release_target(target)
+
+	await assert_error(arrival_frame).is_success()
+
+	assert_array(kinds).is_empty()
+	assert_array(valid_right_after).is_equal([true])
+
+	await await_idle_frame()
+
+	assert_bool(is_instance_valid(pulse)).is_false()
+
+
+func test_launch_rejects_a_non_positive_flight_time() -> void:
+	# 経路 C(事前条件違反)の 1 つ目の 3 つ組 = [0, 解放, あり]
+	for invalid: float in INVALID_FLIGHT_TIMES:
+		var target: Node2D = _create_target(TARGET_POSITION)
+		var pulse: AnalysisPulse = _create_pulse_with(invalid)
+		_add_hand_driven(pulse)
+		var kinds: Array[int] = []
+		_record_kinds(pulse, kinds)
+		var valid_right_after: Array[bool] = []
+		var launch_frame: Callable = func() -> void:
+			pulse.launch(EnemyKind.Kind.SHOOTER, FROM, target)
+			valid_right_after.append(is_instance_valid(pulse))
+		var context: String = "flight_time=%s" % invalid
+
+		await (
+			assert_error(launch_frame)
+			. append_failure_message(context)
+			. is_push_error(INVALID_FLIGHT_TIME_ERROR_FORMAT % invalid)
+		)
+
+		assert_array(kinds).append_failure_message(context).is_empty()
+		assert_array(valid_right_after).append_failure_message(context).is_equal([true])
+
+		await await_idle_frame()
+
+		assert_bool(is_instance_valid(pulse)).append_failure_message(context).is_false()
+
+
+func test_launch_rejects_a_missing_target() -> void:
+	# 経路 C の 2 つ目。標的が解放済みの参照である場合はここへ来ない: Godot 4.7.1 は
+	# 解放済みの値を `to: Node2D` の引数の型検査で弾き、ラムダに捕らえた場合は `null` へ
+	# 差し替える。`launch()` に届く「無効な標的」は `null` だけである
+	var pulse: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(pulse)
+	var kinds: Array[int] = []
+	_record_kinds(pulse, kinds)
+	var valid_right_after: Array[bool] = []
+	var launch_frame: Callable = func() -> void:
+		pulse.launch(EnemyKind.Kind.CHARGER, FROM, null)
+		valid_right_after.append(is_instance_valid(pulse))
+
+	await assert_error(launch_frame).is_push_error(INVALID_TARGET_ERROR)
+
+	assert_array(kinds).is_empty()
+	assert_array(valid_right_after).is_equal([true])
+
+	await await_idle_frame()
+
+	assert_bool(is_instance_valid(pulse)).is_false()
+
+
+func test_a_pulse_that_was_not_launched_stays_still() -> void:
+	# `launch()` を通していない側である。事前条件を破った `launch()` の後も、演出は
+	# 標的を読まずに待つ
+	var pulse: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(pulse)
+	pulse.global_position = FROM
+	var kinds: Array[int] = []
+	_record_kinds(pulse, kinds)
+	var frames: Callable = func() -> void:
+		_advance(pulse, FLIGHT_FRAMES + FRAMES_AFTER_ARRIVAL)
+
+	await assert_error(frames).is_success()
+
+	assert_array(kinds).is_empty()
+	assert_vector(pulse.global_position).is_equal(FROM)
+
+	await await_idle_frame()
+
+	# 発射していない演出は解放もしない
+	assert_bool(is_instance_valid(pulse)).is_true()
+
+
+func test_the_pulse_does_not_change_the_time_scale_or_the_pause_on_any_path() -> void:
+	# 3 経路すべてを既定と別の時間の尺度で通す
+	assert_float(OTHER_TIME_SCALE).is_not_equal(DEFAULT_TIME_SCALE)
+	Engine.time_scale = OTHER_TIME_SCALE
+
+	var arrival_target: Node2D = _create_target(TARGET_POSITION)
+	var arriving: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(arriving)
+	arriving.launch(EnemyKind.Kind.SHOOTER, FROM, arrival_target)
+	_advance(arriving, FLIGHT_FRAMES)
+
+	_assert_the_time_stays_untouched("path=arrival")
+
+	var lost_target: Node2D = _create_target(SECOND_TARGET_POSITION)
+	var losing: AnalysisPulse = _create_pulse(FLIGHT_FRAMES)
+	_add_hand_driven(losing)
+	losing.launch(EnemyKind.Kind.CHARGER, SECOND_FROM, lost_target)
+	_advance(losing, TARGET_LOST_FRAME)
+	await _release_target(lost_target)
+	_advance(losing, 1)
+
+	_assert_the_time_stays_untouched("path=lost")
+
+	var rejected: AnalysisPulse = _create_pulse_with(INVALID_FLIGHT_TIMES[0])
+	_add_hand_driven(rejected)
+	var reject_target: Node2D = _create_target(TARGET_POSITION)
+	var launch_frame: Callable = func() -> void:
+		rejected.launch(EnemyKind.Kind.SHOOTER, FROM, reject_target)
+
+	await (
+		assert_error(launch_frame)
+		. append_failure_message("path=rejected")
+		. is_push_error(INVALID_FLIGHT_TIME_ERROR_FORMAT % INVALID_FLIGHT_TIMES[0])
+	)
+
+	_assert_the_time_stays_untouched("path=rejected")
