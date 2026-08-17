@@ -77,7 +77,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   タスク 2〜5 が共有する契約(3 方向の並び・種別の対応表・能力の 4 項目)を最初に確定させる。3 つのサブタスクは触るファイルが互いに独立で並行できる。
 
-  - [ ] 1.1 (P) `SpreadResolver` の 3 方向を実装する
+  - [x] 1.1 (P) `SpreadResolver` の 3 方向を実装する
     _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
     _Boundary: SpreadResolver_
     - 対象ファイル: `src/ability/spread_resolver.gd`(新規), `tests/ability/spread_resolver_test.gd`(新規)
@@ -402,5 +402,15 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 ### 実装開始時の基準点
 
 - unit #3 の完了時点の `make test` の基線: 407 test cases / 25 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans(PR #10 のマージ後と本単位の Step 0 の 2 回、独立に実測した値。**実装開始時に再実測して基線を更新すること** — 前セッションの報告を信用せず再実行する、が unit #3 の申し送りである)。
+- **実装開始時に再実測した基線(2026-08-17、Godot 4.7.1.stable.official、macOS/darwin 25.5.0)**: 407 test cases / 25 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans / 実行時間 40s。上の値と一致したため基線を据え置く。
 - 凍結の検査(タスク 7.1 の 1 つ目のコマンド)は実装開始時点で空を返すことを確認済み。
+- GUI の Godot が使える環境である(`godot --version` = 4.7.1.stable.official.a13da4feb)。タスク 6.2・6.3 の目視は実行できる見込み。
 - テストの書き方の規約は `docs/testing.md` にある。既存の `tests/` 配下の同種のテストを手本にする(シーン構成は `tests/stage/enemy_dev_stage_test.gd`、武器の振る舞いは `tests/player/player_weapon_test.gd`、純ロジックは `tests/enemy/charger_brain_test.gd`)。
+
+### タスクを跨ぐ申し送り
+
+- **変異注入で実装を一時的に書き換えるときは `git checkout` / `git restore` を使わない。** このプロジェクトの hook がこれらを破壊的な git 操作として拒否する。`cp` で退避 → 書き換え → 退避ファイルから `cp` で復元し、`git status --short` が空であることで復元を確認する。
+- **`Array[Vector2i]` を返す関数から `return []` は Godot 4.7.1 で通る**(空の型付き配列へ変換される)。異常系の戻り値はこの形でよい。
+- **`assert_array(X).contains(spread)`(gdUnit4)は単一の配列引数を要素列へ展開する**(`GdUnitArrayAssertImpl._extract_variadic_value()`)。「`spread` の全要素が X に含まれる」の意味で効き、空振りしない。
+- **`push_error` の文言はテスト側に定数の複製を持つ**(実装の定数を参照すると自己成就する)。書式は既存の `AimResolver` に揃える(`...(現在値: %s)。<復帰の説明>`)。
+- **タスク 1.1 の成果**: 8 方向の環は `SpreadResolver.CLOCKWISE_RING`(`const Array[Vector2i]`)が唯一の正本である。後続で環そのものが要る場合はここを読む(spec.md §6.2 をコードで持つ唯一の場所)。
