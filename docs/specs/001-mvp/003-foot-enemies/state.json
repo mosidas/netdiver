@@ -1,11 +1,15 @@
 {
   "workflow": "sdd",
   "unit": "foot-enemies",
-  "state": "implementing",
+  "state": "completed",
   "approvals": {
     "spec": true,
     "tasks": true
   },
   "created": "2026-08-13",
-  "updated": "2026-08-13"
+  "updated": "2026-08-17",
+  "frozen": {
+    "spec.md": "143253952e859fe81669b333557b766f88c4040b75d855510b946f076b701db4",
+    "tasks.md": "ca50b906e57fb0ee0bda302bbc936429d986a9ec9439e18936d3359b95924311"
+  }
 }
