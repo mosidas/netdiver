@@ -1,7 +1,7 @@
 {
   "workflow": "sdd",
   "unit": "analysis-ability",
-  "state": "initialized",
+  "state": "spec-generated",
   "approvals": {
     "spec": false,
     "tasks": false
