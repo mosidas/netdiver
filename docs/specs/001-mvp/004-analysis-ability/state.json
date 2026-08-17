@@ -1,0 +1,11 @@
+{
+  "workflow": "sdd",
+  "unit": "analysis-ability",
+  "state": "initialized",
+  "approvals": {
+    "spec": false,
+    "tasks": false
+  },
+  "created": "2026-08-17",
+  "updated": "2026-08-17"
+}
