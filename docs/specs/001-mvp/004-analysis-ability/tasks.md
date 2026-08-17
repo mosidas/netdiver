@@ -162,7 +162,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   撃破位置からプレイヤーへ飛ぶ placeholder。**3 つの経路で自己解放する**契約(到達・標的の消失・事前条件違反)を持つ(上流からの申し送り 1)。
 
-  - [ ] 3.1 演出の補間と到達を実装する
+  - [x] 3.1 演出の補間と到達を実装する
     _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.12, 4.13, 8.8, 8.9_
     _Boundary: AnalysisPulse_
     - 対象ファイル: `src/ability/analysis_pulse.gd`(新規), `tests/ability/analysis_pulse_test.gd`(新規)
@@ -441,4 +441,14 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - 1.12 は、タスク定義の例示(`grant(3)` から 2 回撃つ)ではなく `SPEND_DOWN_USES = 4` から 4 発撃ち下ろす形にした。`PlayerStats.ability_uses` の既定が 3 であり、`grant(3)` は同スイートの `test_the_values_used_here_differ_from_the_defaults` が課す「既定値と離す」規律と衝突するため。**タスク 4 で `ability_uses` を差し替えるときも 3 を使わないこと。**
   - 変異注入の実測(レビュアー): (a) `is_empty` ガードの削除 → 4 件失敗、(b) ガードを `_was_held = held` の前へ移動 → 2 件失敗、(c) ガードを `remaining_uses < 0` へ緩め + `maxi(0, ...)` で clamp → 2 件失敗。1.9 と 1.14 は独立に固定されている。
   - タスク 2 の完了時点で `make test` 全体は **469 test cases / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**(基線 407 + 本単位の追加 62)。
+- **タスク 3.1 の成果と 3.2・3.3・5.1 への申し送り**:
+  - **座標系は global を使う。** `launch(kind, from, to)` は `global_position = from` を置き、補間先は `to.global_position` である。タスク 5.1 の配線では撃破位置を **global** で渡すこと(`enemy.global_position`)。
+  - **`flight_time` を `1 / Engine.physics_ticks_per_second` の整数倍に取っても、フレーム数によっては累積が `flight_time` に届かない**(倍精度の丸め)。60 Hz では **6・7・12〜15・24〜30 フレームが該当し、4・8・16・20 は厳密に一致する**(実装者は 24 までと報告したが、レビュアーの独立の再現でもっと広いことが判明した)。**境界をフレーム数で数えるテストを書くときはこのリストのフレーム数を避けること。** 本スイートは 4 と 8 を使い、その前提を `test_the_flight_times_are_reached_by_accumulating_the_frame_delta` で明示的に固定している。
+  - **`minf(progress, 1.0)` の clamp は 4.3 のために要る**。既定 0.4 と 60 Hz の組は整数倍でないため、最後のフレームの経過が `flight_time` を超え、clamp が無いと標的を通り越した点で到達する。
+  - **テストのフレーム駆動は 2 系統ある。** 手で回すケースは `add_child()` の直後に `set_physics_process(false)` を呼ぶヘルパ `_add_hand_driven()` を通し、エンジンの物理フレームと手で回すフレームが混ざらないようにしてある。実フレームのケースだけ `set_physics_process` を触らない。3.2 で経路を足すときも同じヘルパを使えば到達フレームを数えられる。
+  - **`_is_flying`(発射から到達までの間だけ真)は「未発射」と「到達済み」を止めるためだけの状態**である。3.2 が標的の消失・事前条件違反の経路を足すときは、この旗を落としてから `queue_free()` する形に揃えると発火回数の契約が崩れない。**`if not _is_flying: return` は現時点で「到達後」の側だけが観測されている**(レビュアーの指摘)。3.2 で 4.9 の経路を足すときに「launch 前」の側のケースを併せて置くこと。
+  - **`AnalysisPulse` のソースに文字列 `PlayerStats` を書かない**(コメントも不可)。`test_the_pulse_does_not_read_the_player_stats` がソースを見る。ただしこの 1 本は静的検査のみで等価な別解(`load("res://src/player/player_stats.gd")`)を素通りさせるため、8.8 の実体は `test_the_pulse_exports_the_flight_time` と `test_the_player_stats_does_not_hold_the_flight_time` の対が押さえている。
+  - 本タスクの時点で `AnalysisPulse` は `.tscn` を持たないため、テストは `AnalysisPulse.new()` で生成している。3.3 でシーンができた後もこのスイートは `.new()` のままでよい。
+  - レビュアーが 11 種の変異注入を実測し、すべて死亡することを確認した(境界の緩め・標的位置の凍結・状態の共有・`_process` への移動・`flight_time` の直書き・`launch` の位置設定の削除・emit と解放の順の入替・定数 `kind`・解放の削除・`PlayerStats` への `flight_time` 追加)。
+  - タスク 3.1 の完了時点で `make test` 全体は **485 test cases / 30 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
