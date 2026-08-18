@@ -231,7 +231,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `fired` のシグナル宣言(要件 10.3)と既存 14 項目に触れない
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-  - [ ] 4.2 枠の占有と副武器の切り替えを実装する
+  - [x] 4.2 枠の占有と副武器の切り替えを実装する
     _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 5.11, 10.9_
     _Boundary: Player_
     _Depends: 4.1_
@@ -489,4 +489,12 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - **[重要] 4.2b への必須の宿題(レビュアーの指摘)**: `_secondary_weapon.update()` を占有中に**呼ばない(凍結する)**形へ変える変異は、4.2a のスイートでは 136 ケース緑のまま**生き残る**。5.2 の字面(「偽を渡す」)と凍結の差は 5.6(充電が捨てられる)/ 5.7(クールダウンが実時間で進む)でしか観測できない。**4.2b はこの凍結の変異を殺すケースを必ず持つこと。**
   - **[Nit] 未対処(記録のみ)**: 4.1 から引き継いだ `_ensure_weapons()` の名前と責務のずれは、`ability_slot.update()` が `_update_weapons()` へ入ったことでむしろ広がった。要件ではなく、差分を 11 行に保つ判断を優先した。
   - タスク 4.2a の完了時点で `make test` 全体は **520 test cases / 33 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 4.2b の成果と 4.3 への申し送り**:
+  - **4.2b は `src/player/player.gd` を 1 行も変えていない。** 5.5・5.6・5.7・5.9・5.10 は 4.2a の `_update_weapons()`(毎フレーム `_secondary_weapon.update(cmd.secondary_held and 控えた is_empty, delta)` を呼ぶ形)と `SecondaryWeapon.update()` の既存の契約から導出される。4.2b の役割は**その導出が偶然でないことを機械で固定すること**であり、レビュアーが 11 種の変異注入で実測して確認した。
+  - **4.2a が残した必須の宿題(占有中に `_secondary_weapon.update()` を呼ばない「凍結」の変異)は解消した。** この変異は 5.5・5.6・5.7 の両側の 4 ケースが落とす。
+  - **要件 5.10 の静的検査(正規表現)は `set("charge_ratio", ...)` を素通りさせる。** レビュアーがこの回避経路を注入したところ、5.5 と 5.7 の**振る舞い側のケース**が落とした。「しないこと」を静的検査だけで示さない規律が実際に効いている実例である。
+  - テストの定数の追加: `PARTIAL_CHARGE_TIME = 0.1875`(3 フレーム。1 フレームの充電では「満ちていない充電」を作れない)/ `LONG_SECONDARY_COOLDOWN = 0.625`(10 フレーム)/ `PRIMARY_INTERVAL = 0.375`(6 フレーム)。`test_the_added_periods_differ_from_the_defaults_and_from_each_other` が「既定と別」かつ「周期どうしが互いに別」の番人。**4.3 で値を足すときも 0.0625 / 0.125 / 0.1875 / 0.25 / 0.375 / 0.625 と重ならない値に取ること。**
+  - **4.3 で使い回せる観測基盤**: `_shots_per_frame()`(フレームごとの副武器の発射回数の配列)・`_primary_shots_per_frame()`(同・主武器)・`_end_the_takeover(player, released)`(第 3 の枠を 2 回撃ち切って占有を終わらせ、駆動したフレーム数を返す)・`_repeat_frames(held, count)`・`_command(primary_held, secondary_held)`。
+  - `_create_player(charge_time, cooldown)` は既定引数を持つ形へ広げた。既存 8 ケースは `primary_held` を押さないため `primary_interval` の追加で意味は変わっていない(レビュアーが実測)。
+  - タスク 4.2 の完了時点で `make test` 全体は **527 test cases / 33 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**(基線 407 + 本単位の追加 120)。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
