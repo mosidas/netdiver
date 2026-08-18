@@ -210,7 +210,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `[ext_resource]` に `uid=` を書かない(既存の `.tscn` と記法を揃える)
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-- [ ] 4. `Player` の第 3 の枠(占有と拡散弾)
+- [x] 4. `Player` の第 3 の枠(占有と拡散弾)
 
   撃破の配線を除いた「能力を持ってから撃ち切るまで」を縦に貫くスライス。3 つのサブタスクはいずれも `src/player/player.gd` を触るため順に進める。
 
@@ -255,7 +255,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - **10.9** は `make test TESTS=res://tests/player` が既存のテストを 1 行も変えずに緑であることで担保する。既存の `tests/player/player_weapon_test.gd` は空枠でしか駆動しないため、この単位の変更で落ちてはならない。落ちた場合は占有の判定が空枠にも効いている
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-  - [ ] 4.3 拡散弾の発射と `ability_fired` を実装する
+  - [x] 4.3 拡散弾の発射と `ability_fired` を実装する
     _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 6.12, 6.13, 7.4, 8.6_
     _Boundary: Player_
     _Depends: 1.1, 4.2_
@@ -514,4 +514,13 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - **方向の期待値を `SpreadResolver.resolve()` から取る形は `SpreadResolver` 自体の欠陥に対して自己成就する**が、これは tasks.md 4.3 の実装の要点が指示した形であり、環の正しさはタスク 1.1 の `tests/ability/spread_resolver_test.gd` が持つ(レビュアーの [FYI])。
   - レビュアーが 15 種の変異注入を独立に実測し、すべて死亡することを確認した(並びの逆順・隣 2 要素の入替・既定同値の `secondary_bullet_speed` の摩り替え・射程の摩り替え・生成数の削減・容器の固定・7.4 のガードの除去・7.4 の「報告しない」側の破壊・`call_deferred` 化ほか)。
   - タスク 4.3a の完了時点で `make test` 全体は **538 test cases / 34 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 4.3b の成果とタスク 5.1 への申し送り**:
+  - **`Player.ability_fired(directions: Array[Vector2i])` は「1 回の能力の発射につき 1 回」「弾を 1 発も作れなかったフレームでは発火しない」ことがテストで固定されている。** 受け手は発火回数を発射回数として数えてよい。**同一の物理フレームの中で同期に発火する**(`call_deferred` 化する変異が 2 ケースを落とす)。
+  - 実装の形: `_spawn_spread()` が `SpreadResolver.resolve()` の配列をローカルへ受けて 3 発を生成し、**生成に失敗した時点で打ち切って発火せず**、成功した場合だけループの後に 1 回発火する。要件 6.11(残り回数を戻さない)は `AbilitySlot` に触れないことで満たしている。
+  - **`directions` が空のときのガードは意図的に置いていない。** `AimResolver.resolve()` は `facing` を ±1 に守り `signf` で各成分を {-1,0,1} に落とし `Vector2i.ZERO` を退避させるため、戻り値は必ず 8 方向のいずれかになる(レビュアーが独立に確認)。ガードを置くと「到達しない防御」であり、共通の規律の最後の項に反する。
+  - `SECONDARY_HOLD_FRAMES = 13`(4.3a の申し送りの「12 フレーム未満」をわざと超える唯一の列。副武器を意図的に撃たせる 6.8 のケース)。**`SecondaryWeapon.update()` は `charge_ratio + delta / _charge_time` を累積するため、`0.0625 / 0.75` は 2 進で循環し 12 回の加算では 1.0 に届かない。** 充電時間をフレーム数で数える列を書くときは 1 フレームの余裕を取ること。
+  - `assert_error(...).is_push_error(msg)` は gdUnit4 の `_has_log_entry()`(存在の検査)であり**回数を見ない**(`addons/gdUnit4/src/asserts/GdUnitGodotErrorAssertImpl.gd`)。仕様が回数を定めない異常系のテストはこの形でよい。
+  - 追加した観測ヘルパ(5.1 でも使える): `_record_ability_fired(player)` / `_record_fired(player)`(発火順の記録配列)・`_emits_per_frame(player, ability_records, fired_records, commands)`(各フレームの `[ability_fired の回数, fired の回数]` の列)・`_spread_commands(held_frames)`・`_primary_command()`・`_repeat_emits(count, last)`。
+  - レビュアーが 15 種の変異注入を独立に実測し、すべて死亡することを確認した。**`ability_fired` の引数を型無し `Array` にする変異も落ちる**(受け手の型付きラムダが弾くため、署名の型まで振る舞いで固定されている)。
+  - タスク 4.3(= 4 全体)の完了時点で `make test` 全体は **543 test cases / 34 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。

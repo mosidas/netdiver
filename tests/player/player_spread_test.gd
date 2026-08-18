@@ -34,6 +34,18 @@ const SECONDARY_CHARGE_TIME: float = 0.75
 # 拡散の発数。仕様の定数であり、実装から読まない
 const SPREAD_SIZE: int = 3
 
+# 実装の定数を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const MISSING_PROJECTILE_SCENE_ERROR: String = (
+	"Player: projectile_scene が設定されていない。弾を生成せずに返る"
+)
+
+# 充電が満ちる 12 フレームに 1 フレームの余裕を足す: ちょうど 12 だと、1 フレーム分の
+# 割り算を 12 回足した値が満充電に届かないことがあり、発射のフレームが揺れる
+const SECONDARY_HOLD_FRAMES: int = 13
+
+# 移動も上下の狙いも与えないときの射撃方向。`fired` の引数を厳密に比較するために持つ
+const RIGHT: Vector2i = Vector2i(1, 0)
+
 # レイヤ 3・マスクは 1 と 4。生の 4 と 9 を書かない: どのレイヤを意味するのかがテストから
 # 読めなくなる
 const SPREAD_COLLISION_LAYER: int = 1 << 2
@@ -292,6 +304,109 @@ func test_the_spread_is_fired_while_real_physics_frames_drive_the_player() -> vo
 		assert_int(projectile.frames_moved).append_failure_message(context).is_greater(0)
 
 
+func test_the_third_slot_emits_ability_fired_once_and_never_fired() -> void:
+	# 撃ったフレームでだけ `ability_fired` が 1 回発火し、そのフレームで `fired` が 0 回で
+	# あること。押しっぱなしのフレームとクールダウン中の縁では 0 回であり、クールダウンが
+	# 明ければ再び 1 回になる(1 度きりしか発火しない変異は後半の列で落ちる)
+	var player: Player = _create_player()
+	player.grant_ability()
+	var ability_records: Array = _record_ability_fired(player)
+	var fired_records: Array = _record_fired(player)
+
+	var counts: Array = _emits_per_frame(
+		player, ability_records, fired_records, _spread_commands([true, true, false, true])
+	)
+	var released: Array[bool] = _repeat_frames(false, ABILITY_COOLDOWN_FRAMES)
+	released.append(true)
+	var after_cooldown: Array = _emits_per_frame(
+		player, ability_records, fired_records, _spread_commands(released)
+	)
+
+	assert_array(counts).is_equal([[1, 0], [0, 0], [0, 0], [0, 0]])
+	assert_array(after_cooldown).is_equal(_repeat_emits(ABILITY_COOLDOWN_FRAMES, [1, 0]))
+
+
+func test_the_primary_weapon_emits_fired_and_not_ability_fired() -> void:
+	# 分岐のもう片側。主武器で撃ったフレームで `fired` が 1 回・`ability_fired` が 0 回で
+	# あること。枠を占有させたまま撃つ: 占有中の発射をすべて第 3 の枠として扱う変異が落ちる
+	var player: Player = _create_player()
+	player.grant_ability()
+	var ability_records: Array = _record_ability_fired(player)
+	var fired_records: Array = _record_fired(player)
+
+	var counts: Array = _emits_per_frame(
+		player, ability_records, fired_records, [_primary_command()]
+	)
+
+	assert_array(counts).is_equal([[0, 1]])
+	assert_array(fired_records).is_equal([[RIGHT, false]])
+
+
+func test_the_secondary_weapon_emits_fired_and_not_ability_fired() -> void:
+	# 分岐のもう片側(副武器)。枠が空のまま充電して離したフレームで `fired` が 1 回・
+	# `ability_fired` が 0 回であること
+	var player: Player = _create_player()
+	var ability_records: Array = _record_ability_fired(player)
+	var fired_records: Array = _record_fired(player)
+	var frames: Array[bool] = _repeat_frames(true, SECONDARY_HOLD_FRAMES)
+	frames.append(false)
+
+	var counts: Array = _emits_per_frame(
+		player, ability_records, fired_records, _spread_commands(frames)
+	)
+
+	assert_array(counts).is_equal(_repeat_emits(SECONDARY_HOLD_FRAMES, [0, 1]))
+	assert_array(fired_records).is_equal([[RIGHT, true]])
+
+
+func test_the_ability_fired_directions_match_the_spread_in_order() -> void:
+	# `directions` が生成した 3 発と同じ順であること。環の折り返しをまたぐ方向を含む
+	# 4 通りで回す: 1 方向だけだと並びを取り違える実装が素通りする
+	var player: Player = _create_player()
+	var container: Node = player.get_parent()
+	var records: Array = _record_ability_fired(player)
+	var emitted: Array = []
+	var expected: Array = []
+
+	for aim_case: Array in AIM_CASES:
+		var move_x: float = aim_case[0]
+		var aim_y: float = aim_case[1]
+		var context: String = "case=%s" % [aim_case]
+		var records_before: int = records.size()
+		var spawned: Array[Projectile] = _fire_spread(player, container, move_x, aim_y)
+
+		# 同じフレームで 3 発が出ていること: 生成と切り離して発火する変異を落とす
+		assert_int(spawned.size()).append_failure_message(context).is_equal(SPREAD_SIZE)
+		assert_int(records.size() - records_before).append_failure_message(context).is_equal(1)
+		emitted.append(records[records_before])
+		# 期待する 3 方向を `SpreadResolver` から取る: テスト側で隣を並べ直すと、`Player` が
+		# 独自に環を組み立てていても一致してしまう
+		var direction: Vector2i = AimResolver.resolve(move_x, aim_y, player.facing, true)
+		expected.append(SpreadResolver.resolve(direction))
+
+	assert_int(expected.size()).is_equal(AIM_CASES.size())
+	assert_array(emitted).is_equal(expected)
+
+
+func test_the_third_slot_without_a_projectile_scene_reports_and_keeps_the_spent_use() -> void:
+	# 弾を生成できないケース。報告が出ること・弾が 0 発・`ability_fired` が 0 回・残り回数が
+	# 1 減ったままであることを同じケースで見る。減算を取り消す変異は最後の 1 つだけが落とす。
+	# `push_error` の回数は仕様が定めていないためアサーションしない
+	var player: Player = _create_player()
+	var container: Node = player.get_parent()
+	player.projectile_scene = null
+	player.grant_ability()
+	var records: Array = _record_ability_fired(player)
+	var children_before: int = container.get_child_count()
+	var fire_frames: Callable = func() -> void: _advance(player, [false, true])
+
+	await assert_error(fire_frames).is_push_error(MISSING_PROJECTILE_SCENE_ERROR)
+
+	assert_int(container.get_child_count()).is_equal(children_before)
+	assert_array(records).is_empty()
+	assert_int(player.ability_slot.remaining_uses).is_equal(ABILITY_USES - 1)
+
+
 ## 第 3 の枠へ能力を与え直してから 1 回撃たせ、そのフレームに増えた子を返す。
 ##
 ## 与え直すのはクールダウンを明けた状態へ戻すためであり、方向ごとの発射を独立させる
@@ -327,6 +442,64 @@ func _spawns_per_frame(player: Player, container: Node, held_frames: Array[bool]
 func _advance(player: Player, held_frames: Array[bool]) -> void:
 	for held: bool in held_frames:
 		player.apply_command(_spread_command(held, 0.0, 0.0), FRAME_DELTA, true)
+
+
+## 1 フレームずつ進め、各フレームの `[ability_fired の回数, fired の回数]` を並べて返す。
+##
+## 1 本のアサーションに畳まない: 畳むと、発火のフレームが 1 つずれる変異が落ちない
+func _emits_per_frame(
+	player: Player, ability_records: Array, fired_records: Array, commands: Array
+) -> Array:
+	var counts: Array = []
+	for command: PlayerCommand in commands:
+		var ability_before: int = ability_records.size()
+		var fired_before: int = fired_records.size()
+		player.apply_command(command, FRAME_DELTA, true)
+		counts.append(
+			[ability_records.size() - ability_before, fired_records.size() - fired_before]
+		)
+	return counts
+
+
+## 発火した順に `directions` を控える。発火の回数と方向の並びを厳密に比較できる
+func _record_ability_fired(player: Player) -> Array:
+	var records: Array = []
+	var record: Callable = func(directions: Array[Vector2i]) -> void: records.append(directions)
+	player.ability_fired.connect(record)
+	return records
+
+
+## 発火した順に `[direction, is_secondary]` を控える
+func _record_fired(player: Player) -> Array:
+	var records: Array = []
+	var record: Callable = func(direction: Vector2i, is_secondary: bool) -> void:
+		records.append([direction, is_secondary])
+	player.fired.connect(record)
+	return records
+
+
+## 副武器の押下の列を `PlayerCommand` の列にする
+func _spread_commands(held_frames: Array[bool]) -> Array:
+	var commands: Array = []
+	for held: bool in held_frames:
+		commands.append(_spread_command(held, 0.0, 0.0))
+	return commands
+
+
+## 主武器だけを押した 1 フレーム分の入力
+func _primary_command() -> PlayerCommand:
+	var command: PlayerCommand = auto_free(PlayerCommand.new())
+	command.primary_held = true
+	return command
+
+
+## `count` フレーム分の `[0, 0]` に `last` を足した列を返す
+func _repeat_emits(count: int, last: Array) -> Array:
+	var expected: Array = []
+	for frame: int in count:
+		expected.append([0, 0])
+	expected.append(last)
+	return expected
 
 
 ## `held` を `count` フレーム分並べて返す

@@ -10,6 +10,10 @@ extends CharacterBody2D
 signal died
 signal fired(direction: Vector2i, is_secondary: bool)
 
+## 第 3 の枠の発射。`fired` を拡張せずに新設する: `is_secondary: bool` は 3 つ目の枠を
+## 表せず、引数を増やすと既存の受け手にとって `fired` の意味が変わる
+signal ability_fired(directions: Array[Vector2i])
+
 const MISSING_STATS_ERROR: String = "Player: stats が設定されていない。既定値の PlayerStats を使う"
 const INVALID_DELTA_ERROR: String = "Player.apply_command(): delta は正でなければならない。速度を変えずに返る"
 const INVALID_STAT_ERROR_FORMAT: String = "Player: stats.%s は正でなければならない(現在値: %s)"
@@ -160,8 +164,18 @@ func _ensure_ability_slot() -> void:
 # 拡散の 3 方向を自分で組み立てない: 隣り合いの決め方が `SpreadResolver` と二重になり、
 # 環の折り返しの扱いが場所ごとに分かれる
 func _spawn_spread(direction: Vector2i) -> void:
-	for spread_direction: Vector2i in SpreadResolver.resolve(direction):
-		_launch_projectile(spread_direction, stats.ability_bullet_speed, stats.ability_damage)
+	var directions: Array[Vector2i] = SpreadResolver.resolve(direction)
+	for spread_direction: Vector2i in directions:
+		var launched: bool = _launch_projectile(
+			spread_direction, stats.ability_bullet_speed, stats.ability_damage
+		)
+		# 生成できなかった時点で打ち切って発火しない: 弾の無い発射を受け手が本物と区別できない
+		# (`_spawn_projectile()` が `fired` を出さずに返るのと同じ扱い)
+		if not launched:
+			return
+
+	# 発火をループの外に置く: 方向ごとに発火すると、受け手が 1 回の発射を 3 回と読む
+	ability_fired.emit(directions)
 
 
 func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_secondary: bool) -> void:
