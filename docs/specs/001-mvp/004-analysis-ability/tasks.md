@@ -535,4 +535,22 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - レビュアーが 24 種の変異注入を独立に実測し、**等価変異 1 つを除きすべて死亡**した。生存したのは `AbilityAnalysis.is_transferable(kind)` を `kind != 1` の直書きへ置換する変異である(振る舞いが完全に等価で、要件 3.5 の静的検査も字面しか見ない)。記録のみで対処しない。
   - [Nit] 未対処(記録のみ): `_pulses_in_the_whole_tree()` が `get_tree().root` 全体を走査するため、同一プロセスの他スイートが `AnalysisPulse` を残した場合に偽陽性で落ちうる(現状 orphans 0 で実害なし)。`test_the_handler_runs_no_reload_inside_its_own_call` は毎回ログへ `Parameter "current_scene" is null.` を 1 件残す(正常。ログの純度を検査する仕組みを入れる場合の既知の雑音)。
   - タスク 5.1 の完了時点で `make test` 全体は **555 test cases / 35 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **サブタスク 5.2 の 2 分割(オーケストレーターの判断。分割の事実と理由の記録)**:
+  - 5.2 は要件 ID が 12 本あり、`.tscn` を手で書き起こす作業と検査の両方を含む。1 コミットに収めると、外部からの打ち切りで失う作業量が他のサブタスクの数倍になる。**コミット単位で保全される粒度を保つ**という制約に従い、次の 2 つに分けて別々にコミットする。tasks.md のチェックボックスは 2 つがそろった時点で `5.2` に付ける。
+  - **5.2a**(要件 9.1・9.2・9.4・9.5・9.6・9.20): 地形とアクターの配置。床・壁・`Player` 1・`ShooterEnemy` 1・`ChargerEnemy` 1 を置き、体数・距離・画面内・スポナー不在を検査する。
+  - **5.2b**(要件 9.8・9.9・9.14・9.15・9.16・9.18): 接続と参照。`defeated` の `[connection]` と `binds`・`died` の `[connection]`・`target` の宣言・`pulse_scene` の設定を足し、それぞれを検査する。
+  - 切り口は「配置」と「接続」である。`[connection]` を持たないシーンも読み込める妥当なシーンなので、この順で段階的に足せる。
+- **タスク 5.2a の成果と 5.2b・5.3 への申し送り**:
+  - 床・壁は `src/stage/enemy_dev_stage.tscn` の該当ブロックを**バイト単位で同一**に写した(レビュアーが `diff` で確認)。色は既存の地形色 `Color(0.24, 0.26, 0.32, 1)` であり、`tests/ability/analysis_pulse_scene_test.gd` の `EXISTING_PLACEHOLDER_SCENE_PATHS` への追記は不要(タスク 3.3 の申し送りの条件を満たす)。`[ext_resource]` に `uid=` は 0 件。`.tscn.uid` は生成されない。
+  - **`test_the_stage_holds_no_spawner` の PackedScene の検査は 5.2b を先回りして許容してある。** 「収集した各項目が許可集合(`Player.projectile_scene` / `ShooterEnemy.projectile_scene` / `AnalysisDevStage.pulse_scene`)に含まれること」+「撃つ側の 2 つが必ず現れること」の対で書いてあり、**5.2b が `pulse_scene` を設定してもこのケースは緑のまま**である。レビュアーがこの先回りで検出力が落ちていないことを変異で実測した。
+  - **[FYI 重要] 許可集合はプロパティ名ベースで参照先の中身を見ない。** `pulse_scene` に別のシーン(例: `charger_enemy.tscn`)を差す変異は 5.2a のスイートでは生存する。**これを受けるのは 5.2b の要件 9.16(`pulse_scene` を `instantiate()` してルートが `AnalysisPulse` であること)であり、5.2b・5.3 で 9.16 を省くとこの経路が誰にも見られなくなる。**
+  - **5.3 へ写せるヘルパ**: `_instantiate_stage()` / `_collect_nodes()` / `_nodes_of()` / `_enemies_in()` / `_rect_size()` / `_terrain_bodies()` / `_distance_to_player()`。差し替えが要るのは `ACTOR_NAMES`(`ShooterEnemy` / `ShooterEnemy2`)・射撃型 2・突進型 0・許可集合の PackedScene(`ShooterEnemy2.projectile_scene` が増える)。
+  - **地形の縦は基準解像度に収まらない**(壁は y = -16..92)。9.6 の地形側は**幅だけ**を見ている。アクター側は縦横とも見ている。5.3 でも同じ切り分けにすること。
+  - **この時点のシーンは敵の `target` を持たないため、ツリーへ載せても敵は動かない。5.2b が `target` を足すと敵が動き出す**ので、`test_no_enemy_appears_while_the_stage_runs`(200ms の実フレーム)が 5.2b の後も安定するかを 5.2b 側で再確認すること(unit #3 の同名ケースが同条件で通っているので見込みは高い)。
+  - `Player` がステージのルート直下であることは `test_the_single_player_is_a_direct_child_of_the_stage` が固定した(5.1 の申し送り 4 が機械で閉じた)。中間ノードの下へ移す変異は 6 ケースが落とす。
+  - レビュアーが 21 種の変異注入を独立に実測し、要件に対応する 13 種はすべて死亡した。生存 8 種はいずれも要件中立(§8 の座標の平行移動・入れ替え・床の当たり判定の幅・地形の色・PackedScene の参照先の中身)である。
+  - **[Nit] 未対処(記録のみ、2 件)**:
+    - 「床の上に立つ」の検査が縦方向しか見ない。床の `RectangleShape2D` を 60×16 まで縮めても(3 体とも床の x 範囲の外に立つ)全ケースが緑のまま。**手本の `tests/stage/enemy_dev_stage_test.gd` にもある既知の弱さ**であり、成果物自体は正しい。アクターの x 範囲が床の x 範囲に収まることを 1 行足すと閉じる。
+    - **新しい仮ステージ 2 つの地形の色を誰も固定していない。** 床・壁の色を `AnalysisPulse` と同じ緑へ変えても `make test` 全体が緑のまま(要件 4.16 が事実上破れてもテストに現れない)。実ファイルは既存と同色を写しているので**現時点の違反は無い**。閉じるなら、地形の色が `enemy_dev_stage.tscn` と一致することを 1 本置くか、`EXISTING_PLACEHOLDER_SCENE_PATHS` へ 2 シーンを足す。
+  - タスク 5.2a の完了時点で `make test` 全体は **568 test cases / 36 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
