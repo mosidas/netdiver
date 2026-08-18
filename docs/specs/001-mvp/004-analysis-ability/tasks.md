@@ -276,7 +276,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   撃破 → 演出 → 到達 → 取得を end-to-end で繋ぐスライス。配線の実装は 1 つのスクリプトに閉じ、2 つのシーンで共有する(spec.md §5.6・§8)。
 
-  - [ ] 5.1 `AnalysisDevStage` の配線を実装する
+  - [x] 5.1 `AnalysisDevStage` の配線を実装する
     _Requirements: 7.6, 7.7, 7.8, 9.10, 9.11, 9.12, 9.13, 9.17, 9.19_
     _Boundary: AnalysisDevStage_
     _Depends: 1.2, 3.2, 4.1_
@@ -523,4 +523,16 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - 追加した観測ヘルパ(5.1 でも使える): `_record_ability_fired(player)` / `_record_fired(player)`(発火順の記録配列)・`_emits_per_frame(player, ability_records, fired_records, commands)`(各フレームの `[ability_fired の回数, fired の回数]` の列)・`_spread_commands(held_frames)`・`_primary_command()`・`_repeat_emits(count, last)`。
   - レビュアーが 15 種の変異注入を独立に実測し、すべて死亡することを確認した。**`ability_fired` の引数を型無し `Array` にする変異も落ちる**(受け手の型付きラムダが弾くため、署名の型まで振る舞いで固定されている)。
   - タスク 4.3(= 4 全体)の完了時点で `make test` 全体は **543 test cases / 34 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 5.1 の成果と 5.2・5.3・6.2 への申し送り(シーンの構成が依存する契約)**:
+  1. **`[connection]` の `method="_on_enemy_defeated"`**。シグナルは `Enemy.defeated(kind: int)`、`binds=[NodePath("<敵>")]`。ハンドラの署名は `_on_enemy_defeated(kind: int, enemy_path: NodePath)` であり、**引数の順はシグナルの引数 → binds** である。`NodePath` はステージから `get_node()` で解決できる相対パスであること(指す先は `Node2D` の子孫)。
+  2. **`[connection]` の `method="_on_player_died"`**(`player.died`、binds 無し)。
+  3. **`export` は `pulse_scene` の 1 つだけ**(spec.md §5.6 の公開インターフェースの表がこれ 1 つしか持たないため、プレイヤーを `@export` / `node_paths` で受ける形は逆に契約からの逸脱になる。レビュアーが照合済み)。
+  4. **`Player` はステージのルート直下の子であり、型 `Player` の最初の 1 体が使われる**(`_player()` が直下の子を型で走査する)。**5.2・5.3 で `Player` を中間ノードの下へ入れないこと。** 入れると演出の標的が null になり、`AnalysisPulse` が事前条件違反の `push_error` を出して即自壊し、目視で何も飛ばなくなる。**5.2・5.3 のシーンテストで `player.get_parent() == stage` を 1 本置くと、この暗黙の制約が機械で固定される**(レビュアーの提案)。spec.md §8 の配置の表とは矛盾しない(既存の `enemy_dev_stage.tscn` も `Player` はルート直下)。
+  5. 演出は**ステージ自身の子として `add_child()` した後に** `launch()` する。始点は撃破された敵の `global_position`(座標系は global)。`flight_time` は `AnalysisPulse` 側の `@export`(既定 0.4)でありステージは触らない。
+  6. `_on_pulse_arrived(kind: int)` はコード側で繋ぐためシーンには現れない。
+  - **5.1 のスイートは敵をスタブの `Node2D` で置くため、実際の `Enemy.defeated` → binds → ハンドラの往復は 1 度も走らない。** ハンドラの引数の順が実シグナルと整合することは 5.2・5.3 の `[connection]` 検査(とくに (d) の `get_node()` 解決)と 6.2・6.3 の目視が担う(レビュアーの指摘)。
+  - 要件 3.5 の担保を独立に probe 済み: `src/stage/analysis_dev_stage.gd` に `EnemyKind` は 0 件で、`tests/ability/ability_analysis_test.gd::test_the_analysis_dev_stage_source_does_not_name_the_enemy_kind` は `file_exists` の空振り経路ではなく `not_contains` の本経路へ入っている(タスク 1.2 の申し送りの確認事項を消化した)。
+  - レビュアーが 24 種の変異注入を独立に実測し、**等価変異 1 つを除きすべて死亡**した。生存したのは `AbilityAnalysis.is_transferable(kind)` を `kind != 1` の直書きへ置換する変異である(振る舞いが完全に等価で、要件 3.5 の静的検査も字面しか見ない)。記録のみで対処しない。
+  - [Nit] 未対処(記録のみ): `_pulses_in_the_whole_tree()` が `get_tree().root` 全体を走査するため、同一プロセスの他スイートが `AnalysisPulse` を残した場合に偽陽性で落ちうる(現状 orphans 0 で実害なし)。`test_the_handler_runs_no_reload_inside_its_own_call` は毎回ログへ `Parameter "current_scene" is null.` を 1 件残す(正常。ログの純度を検査する仕組みを入れる場合の既知の雑音)。
+  - タスク 5.1 の完了時点で `make test` 全体は **555 test cases / 35 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
