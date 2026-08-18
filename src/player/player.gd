@@ -112,7 +112,8 @@ func _update_weapons(cmd: PlayerCommand, direction: Vector2i, delta: float) -> v
 	var is_slot_empty: bool = ability_slot.is_empty
 	# 空のフレームでも呼ぶ: 呼ばないと押下の記録が飛び、取得の時点で押しっぱなしの
 	# ボタンが次のフレームで縁と誤認される
-	ability_slot.update(cmd.secondary_held, delta)
+	if ability_slot.update(cmd.secondary_held, delta):
+		_spawn_spread(direction)
 
 	# 占有中は「離した」を渡す: 凍結する形にするとクールダウンが実時間で進まず、
 	# 満たなかった充電が占有をまたいで持ち越される
@@ -156,10 +157,26 @@ func _ensure_ability_slot() -> void:
 	ability_slot = AbilitySlot.new(stats.ability_cooldown)
 
 
+# 拡散の 3 方向を自分で組み立てない: 隣り合いの決め方が `SpreadResolver` と二重になり、
+# 環の折り返しの扱いが場所ごとに分かれる
+func _spawn_spread(direction: Vector2i) -> void:
+	for spread_direction: Vector2i in SpreadResolver.resolve(direction):
+		_launch_projectile(spread_direction, stats.ability_bullet_speed, stats.ability_damage)
+
+
 func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_secondary: bool) -> void:
+	# 生成できなかったときに発火しない: 弾の無い発射を受け手が本物の 1 発と区別できない
+	if not _launch_projectile(direction, speed, damage):
+		return
+	fired.emit(direction, is_secondary)
+
+
+# 生成を `_spawn_projectile()` から分ける: `fired` は主武器・副武器の 2 枠に対応する
+# シグナルであり、第 3 の枠の弾に付けると受け手が枠を区別できなくなる
+func _launch_projectile(direction: Vector2i, speed: float, damage: int) -> bool:
 	if projectile_scene == null:
 		push_error(MISSING_PROJECTILE_SCENE_ERROR)
-		return
+		return false
 
 	var projectile: Projectile = projectile_scene.instantiate()
 	# 自分の子にしない: 弾がプレイヤーと一緒に動き、進行方向どおりに飛ばなくなる。
@@ -172,7 +189,7 @@ func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_second
 	# 位置を決めてから launch() する: 射程は launch() を呼んだ時点の位置から測る
 	projectile.global_position = global_position
 	projectile.launch(direction, speed, damage, stats.bullet_max_distance)
-	fired.emit(direction, is_secondary)
+	return true
 
 
 # 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`PlayerStats` へ

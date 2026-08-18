@@ -497,4 +497,21 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - **4.3 で使い回せる観測基盤**: `_shots_per_frame()`(フレームごとの副武器の発射回数の配列)・`_primary_shots_per_frame()`(同・主武器)・`_end_the_takeover(player, released)`(第 3 の枠を 2 回撃ち切って占有を終わらせ、駆動したフレーム数を返す)・`_repeat_frames(held, count)`・`_command(primary_held, secondary_held)`。
   - `_create_player(charge_time, cooldown)` は既定引数を持つ形へ広げた。既存 8 ケースは `primary_held` を押さないため `primary_interval` の追加で意味は変わっていない(レビュアーが実測)。
   - タスク 4.2 の完了時点で `make test` 全体は **527 test cases / 33 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**(基線 407 + 本単位の追加 120)。
+- **サブタスク 4.3 の 2 分割(オーケストレーターの判断。分割の事実と理由の記録)**:
+  - 4.3 は要件 ID が 14 本あり、本単位で最多である(次点の 4.2 は 12 本で、同じ理由により 2 分割した)。1 コミットに収めると、外部からの打ち切りで失う作業量が他のサブタスクの数倍になる。**コミット単位で保全される粒度を保つ**という制約に従い、次の 2 つに分けて別々にコミットする。tasks.md のチェックボックスは 2 つがそろった時点で `4.3` に付ける。
+  - **4.3a**(要件 6.1・6.2・6.3・6.4・6.12・6.13・7.4・8.6): 拡散弾 3 発の生成そのもの。方向の並び・能力の値の受け渡し・生成先のコンテナ・当たり判定のレイヤ・空の枠では撃たないこと。
+  - **4.3b**(要件 6.5・6.6・6.7・6.8・6.9・6.10・6.11): `ability_fired` の宣言と発火・`fired` との排他・`projectile_scene` が未設定のときの異常系。
+  - **要件 6.5 の割り当ての訂正(オーケストレーターの誤りと、それを捕らえた経路の記録)**: 当初 6.5 を 4.3a 側に置いたが、6.5 は「拡散弾を 3 発生成したフレームで `ability_fired` を 1 回だけ発火する」であり `ability_fired` の要件である。4.3a の実装者が「要件一覧に 6.5 があるのに `ability_fired` の実装が禁じられている」矛盾を `NOTES` で申告し、より具体的な禁止側に従って 6.5 を実装しなかった。**要件の割り当ての誤りは、実装者が矛盾を黙って解消せず申告することで捕らえられた。** 上の一覧はこの申告を受けて訂正したものである(tasks.md のサブタスク 4.3 の `_Requirements:_` 自体は変更していない。分割はオーケストレーターの記録であり、要件の総和は変わらない)。
+  - 切り口は「生成」と「シグナル・異常系」である。`ability_fired` は既存の `_spawn_projectile()` が `fired` を出す構造と干渉するため、生成の経路が固まってから足すほうが差分が読める。
+- **タスク 4.3a の成果と 4.3b・5.1 への申し送り**:
+  - **実装の形**: 生成の実体を `_launch_projectile()`(戻り値 `bool`)へ切り出し、`fired.emit()` は既存の `_spawn_projectile()`(主武器・副武器の経路)にだけ残した。拡散弾は `_spawn_spread()` が `_launch_projectile()` を直接呼ぶため `fired` を通らない。**要件 6.7 は実装の構造で守られている**(4.3b が振る舞いのテストを足す)。
+  - **4.3b への引き継ぎ**: `ability_fired` は `_spawn_spread()` の**ループの後**に 1 回発火する形で足せる。`directions` は `SpreadResolver.resolve(direction)` の戻り値そのもの(ローカル変数へ受けてから回す形に変えるだけ)。要件 6.10 は `_launch_projectile()` の戻り値を数えれば実装でき、6.11 は `AbilitySlot` に触れないことで自動的に満たされる。
+  - **`_launch_projectile()` が偽を返す経路(`projectile_scene == null`)は、現時点で既存の `tests/player/player_weapon_test.gd::test_firing_without_a_projectile_scene_pushes_an_error`(主武器)だけが通っている。** 第 3 の枠での同経路は 4.3b の 6.9〜6.11 が初めて通す。
+  - テストの定数(`tests/player/player_spread_test.gd`): `FRAME_DELTA = 0.0625` / `ABILITY_COOLDOWN = 0.5`(8 フレーム)/ `ABILITY_USES = 5` / `ABILITY_DAMAGE = 27` / `ABILITY_BULLET_SPEED = 180.0` / `BULLET_MAX_DISTANCE = 1024.0` / `SHORT_MAX_DISTANCE = 8.0` / `SECONDARY_CHARGE_TIME = 0.75`。`test_the_values_used_here_differ_from_the_defaults` が番人で、`ability_damage` が `primary_damage`/`secondary_damage` と、`ability_bullet_speed` が `primary_bullet_speed`/`secondary_bullet_speed` と重ならないことまで固定している。
+  - **方向と速さは弾の変位でしか読めない**(`Projectile` は速度・射程を公開しない)。「発射をすべて終えてから容器をツリーへ載せ、実フレームで飛ばして `frames_moved` から期待変位を算術で出す」形で観測している(既存の `player_weapon_test.gd` と同じ手)。射程は「短い射程で解放される / 長い射程で解放されない」の対で見る。
+  - 使い回せる観測ヘルパ: `_fire_spread(player, container, move_x, aim_y)`(1 回撃たせ、そのフレームに増えた子を `Array[Projectile]` で返す)・`_spawns_per_frame()`(フレームごとの子の増分の配列)・`_create_orphan_player()`(容器を持たない `Player`)。
+  - `secondary_charge_time` を 12 フレーム(0.75)に取ってあるため、空の枠で副武器のボタンを押す列に副武器の弾が混ざらない。**4.3b で空の枠の列を延ばす場合はこの前提(押しっぱなしのフレーム数 < 12)を確かめること。**
+  - **方向の期待値を `SpreadResolver.resolve()` から取る形は `SpreadResolver` 自体の欠陥に対して自己成就する**が、これは tasks.md 4.3 の実装の要点が指示した形であり、環の正しさはタスク 1.1 の `tests/ability/spread_resolver_test.gd` が持つ(レビュアーの [FYI])。
+  - レビュアーが 15 種の変異注入を独立に実測し、すべて死亡することを確認した(並びの逆順・隣 2 要素の入替・既定同値の `secondary_bullet_speed` の摩り替え・射程の摩り替え・生成数の削減・容器の固定・7.4 のガードの除去・7.4 の「報告しない」側の破壊・`call_deferred` 化ほか)。
+  - タスク 4.3a の完了時点で `make test` 全体は **538 test cases / 34 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
