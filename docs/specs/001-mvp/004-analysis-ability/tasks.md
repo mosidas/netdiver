@@ -294,7 +294,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - **`EnemyKind` を参照しない**(要件 3.5。判定は `AbilityAnalysis` に委ねる)。テストのスタブが `defeated` 相当の値を渡す形にする
     - 検証コマンド: `make test TESTS=res://tests/stage`
 
-  - [ ] 5.2 (P) `analysis_dev_stage.tscn` を作る
+  - [x] 5.2 (P) `analysis_dev_stage.tscn` を作る
     _Requirements: 9.1, 9.2, 9.4, 9.5, 9.6, 9.8, 9.9, 9.14, 9.15, 9.16, 9.18, 9.20_
     _Boundary: AnalysisDevStage_
     _Depends: 3.3, 5.1_
@@ -553,4 +553,14 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
     - 「床の上に立つ」の検査が縦方向しか見ない。床の `RectangleShape2D` を 60×16 まで縮めても(3 体とも床の x 範囲の外に立つ)全ケースが緑のまま。**手本の `tests/stage/enemy_dev_stage_test.gd` にもある既知の弱さ**であり、成果物自体は正しい。アクターの x 範囲が床の x 範囲に収まることを 1 行足すと閉じる。
     - **新しい仮ステージ 2 つの地形の色を誰も固定していない。** 床・壁の色を `AnalysisPulse` と同じ緑へ変えても `make test` 全体が緑のまま(要件 4.16 が事実上破れてもテストに現れない)。実ファイルは既存と同色を写しているので**現時点の違反は無い**。閉じるなら、地形の色が `enemy_dev_stage.tscn` と一致することを 1 本置くか、`EXISTING_PLACEHOLDER_SCENE_PATHS` へ 2 シーンを足す。
   - タスク 5.2a の完了時点で `make test` 全体は **568 test cases / 36 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 5.2b の成果と 5.3・6.2 への申し送り**:
+  - **`binds` の `.tscn` 上の書式は `binds= [NodePath("...")]`**(`binds=` の後に空白が 1 つ入る Godot の書き出し形式)。5.3 で写すときはこの書式を保つこと。
+  - **`node_paths=PackedStringArray("target")` は `[node]` ヘッダ側に要る。** これを外して `target = NodePath("../Player")` だけを残すと `instantiate()` 後に `target` が静かに `null` になる(実装者が変異で実測)。9.14 のケースがこれを殺す。
+  - **5.2a が残した懸念(`test_no_enemy_appears_while_the_stage_runs` が `target` の追加後も安定するか)は解消した。** 射撃型は `move_speed = 0.0` で動かず、突進型は距離 ≈200 > `detect_range` 128 で初期は動かない。加えて射撃型の弾は telegraph 0.4 秒 + 飛翔 ≈0.94 秒でプレイヤーへ届くため、200ms の観測窓には当たりが入らない。**`died` の接続が入った今、この余裕は重要である**(観測窓の中でプレイヤーが死ぬと `reload_current_scene` がテストのシーンを巻き込む)。**5.3 でも観測窓を伸ばさないこと。**
+  - **5.3 へそのまま写せるのは 9.8/9.9・9.14・9.15・9.16・9.18 の 5 本の骨格**。9.8/9.9 と 9.14 は `_enemies_in(stage)` を回す形で敵の名前の直書きが無い。**9.16 のケースは必ず写すこと** — `pulse_scene` を別のシーン(`projectile.tscn` / `charger_enemy.tscn`)へ差し替える変異は、9.16 以外のどのケースも検出しない(実装者とレビュアーが独立に実測)。
+  - 検査 (d) には `get_node()` ではなく `get_node_or_null()` を使った(解決できない経路の誤りを、エンジンの `push_error` ではなくアサーションの失敗として見せるため)。ハンドラ名 `_on_enemy_defeated` / `_on_player_died` はテスト側に定数の複製を持つ。
+  - **5.1 の申し送りが「自動テストでは 1 度も走らない」とした実シグナルの往復(`Enemy.defeated` → `binds` → ハンドラの引数の順)は、実行時プローブで閉じた。** 実装者とレビュアーが独立に、実シーンをツリーへ載せて `defeated.emit(kind)` を発火させ、ステージ直下に `AnalysisPulse` が 1 つ生成され始点が当の敵の `global_position`((160,84) と (248,84))に一致すること、射撃型では `remaining_uses` が満ち突進型では 0 のままであることを実測した(成果物は変更していない)。
+  - レビュアーが 12 種の変異注入を独立に実測し、すべて死亡した(両方の binds を同じ敵へ・binds の入れ替え・`node_paths` の削除・`pulse_scene` の差し替えと削除・`died` の接続の削除と接続先の付け替え・両ハンドラ名の改名・`target` の付け替え・`defeated` 接続の削除)。
+  - **[Nit] 未対処(記録のみ)**: テストの `OBSERVED_MILLIS` の根拠のコメントは「飛翔だけで 1 秒以上」と読めるが、実測は飛翔 ≈0.94 秒であり余裕を作っているのは telegraph 0.4 秒との合計 ≈1.33 秒である。振る舞いへの影響はない。5.2a の Nit 2 件(床の x 範囲を見ていない・新しい仮ステージの地形色を誰も固定していない)は本タスクでも未着手。
+  - タスク 5.2 の完了時点で `make test` 全体は **573 test cases / 36 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。

@@ -12,6 +12,12 @@ const PLAYER_NAME: String = "Player"
 const ACTOR_NAMES: Array[String] = ["Player", "ShooterEnemy", "ChargerEnemy"]
 const SHAPE_NAME: String = "CollisionShape2D"
 
+const DEFEATED_HANDLER_NAME: String = "_on_enemy_defeated"
+const DIED_HANDLER_NAME: String = "_on_player_died"
+
+# 撃破の接続が束縛する引数の数。ハンドラは `[kind, NodePath]` を受け取り、束縛は後ろの 1 つ
+const EXPECTED_BOUND_ARGUMENT_COUNT: int = 1
+
 const EXPECTED_ENEMY_COUNT: int = 2
 const EXPECTED_SHOOTER_COUNT: int = 1
 const EXPECTED_CHARGER_COUNT: int = 1
@@ -26,8 +32,8 @@ const MAX_ENEMIES_IN_THREAT_RING: int = 2
 const SPAWNER_CLASS_NAMES: Array[String] = ["Timer", "MultiplayerSpawner"]
 
 # シーンが持ってよい PackedScene の参照。いずれも弾か解析の演出であり、敵を出す口ではない。
-# 「この集合に含まれること」で見る(「一致すること」ではない): 演出の参照は接続を足す
-# 後続の作業で設定され、そのときに現れる
+# 「一致すること」ではなく「この集合に含まれること」で見る: 参照の有無ではなく、敵のシーンを
+# 指す参照が現れないことがここの関心である
 const ALLOWED_PACKED_SCENE_PROPERTIES: Array[String] = [
 	"Player.projectile_scene",
 	"ShooterEnemy.projectile_scene",
@@ -42,8 +48,8 @@ const REQUIRED_PACKED_SCENE_PROPERTIES: Array[String] = [
 
 # 実フレームで敵の数が変わらないことを見る待ち時間。
 # 下限: 物理フレームが 1 つ以上進むこと(60Hz で約 12 フレーム)。
-# 上限: プレイヤーが死んで再読込が走らないこと。この時点のシーンは敵の `target` を持たない
-# ため敵は動かず、突進型の予備動作も始まらない
+# 上限: プレイヤーが死んで再読込が走らないこと。手前の射撃型は索敵の圏内に居るが、予備動作を
+# 終えてから弾がプレイヤーまで飛ぶまでに 1 秒以上かかるため、この時間内に当たりは届かない
 const OBSERVED_MILLIS: int = 200
 
 const POSITION_TOLERANCE: float = 0.001
@@ -180,6 +186,96 @@ func test_the_single_player_is_a_direct_child_of_the_stage() -> void:
 	if players.size() != EXPECTED_PLAYER_COUNT:
 		return
 	assert_object(players[0].get_parent()).is_same(stage)
+
+
+func test_every_enemy_defeat_is_wired_to_the_stage_and_binds_its_own_path() -> void:
+	var stage := _instantiate_stage()
+	var enemies: Array[Enemy] = _enemies_in(stage)
+	# 検査が空振りしていないこと(接続を持つ相手が居ること)
+	assert_int(enemies.size()).is_equal(EXPECTED_ENEMY_COUNT)
+
+	for enemy: Enemy in enemies:
+		# `_ready()` で接続する実装では、`instantiate()` した時点の接続は 0 件になる
+		var connections: Array = enemy.get_signal_connection_list(&"defeated")
+		assert_int(connections.size()).append_failure_message(str(enemy.name)).is_equal(1)
+		if connections.size() != 1:
+			continue
+
+		var callable: Callable = connections[0]["callable"]
+		assert_object(callable.get_object()).append_failure_message(str(enemy.name)).is_same(stage)
+		assert_str(str(callable.get_method())).append_failure_message(
+			str(enemy.name)
+		).is_equal(DEFEATED_HANDLER_NAME)
+		assert_bool(stage.has_method(DEFEATED_HANDLER_NAME)).is_true()
+
+		var bound: Array = callable.get_bound_arguments()
+		assert_int(bound.size()).append_failure_message(
+			"%s: %s" % [enemy.name, bound]
+		).is_equal(EXPECTED_BOUND_ARGUMENT_COUNT)
+		if bound.size() != EXPECTED_BOUND_ARGUMENT_COUNT:
+			continue
+		assert_bool(bound[0] is NodePath).append_failure_message(
+			"%s: %s" % [enemy.name, type_string(typeof(bound[0]))]
+		).is_true()
+		if not (bound[0] is NodePath):
+			continue
+
+		# 束縛された経路がその敵自身へ解決すること。ここを見ないと、すべての接続が同じ敵を
+		# 指す誤りが素通りする。
+		# `get_node()` ではなく `get_node_or_null()` で引く: 解決できない経路の誤りを
+		# エンジンのエラーではなく、このアサーションの失敗として見せる
+		assert_object(stage.get_node_or_null(bound[0] as NodePath)).append_failure_message(
+			"%s -> %s" % [enemy.name, bound[0]]
+		).is_same(enemy)
+
+
+func test_every_enemy_targets_the_player_by_the_scene_declaration() -> void:
+	var stage := _instantiate_stage()
+	var player: Node2D = stage.get_node(NodePath(PLAYER_NAME))
+	var enemies: Array[Enemy] = _enemies_in(stage)
+	assert_int(enemies.size()).is_equal(EXPECTED_ENEMY_COUNT)
+
+	for enemy: Enemy in enemies:
+		# `[node]` ヘッダの `node_paths` が無いと、宣言した経路は `instantiate()` の後に
+		# 静かに `null` へ落ちる。同一性まで見ることで「宣言であること」が 1 本で固まる
+		assert_object(enemy.target).append_failure_message(str(enemy.name)).is_same(player)
+
+
+func test_the_player_death_is_wired_to_the_stage_by_the_scene_declaration() -> void:
+	var stage := _instantiate_stage()
+	var player: Player = stage.get_node(NodePath(PLAYER_NAME))
+
+	# `_ready()` で接続する実装では、`instantiate()` した時点の接続は 0 件になる
+	var connections: Array = player.get_signal_connection_list(&"died")
+	assert_int(connections.size()).is_equal(1)
+	if connections.size() != 1:
+		return
+
+	var callable: Callable = connections[0]["callable"]
+	assert_object(callable.get_object()).is_same(stage)
+	assert_str(str(callable.get_method())).is_equal(DIED_HANDLER_NAME)
+	assert_bool(stage.has_method(DIED_HANDLER_NAME)).is_true()
+
+
+func test_the_stage_declares_the_pulse_scene() -> void:
+	var stage: AnalysisDevStage = _instantiate_stage() as AnalysisDevStage
+	assert_object(stage).is_not_null()
+
+	assert_object(stage.pulse_scene).is_not_null()
+
+
+func test_the_declared_pulse_scene_instantiates_an_analysis_pulse() -> void:
+	# 参照の中身まで見る: null でないことだけでは、別の `PackedScene` を差す誤りが素通りする
+	var stage: AnalysisDevStage = _instantiate_stage() as AnalysisDevStage
+	assert_object(stage).is_not_null()
+	assert_object(stage.pulse_scene).is_not_null()
+	if stage == null or stage.pulse_scene == null:
+		return
+
+	var pulse: Node = auto_free(stage.pulse_scene.instantiate())
+	assert_bool(pulse is AnalysisPulse).append_failure_message(
+		"%s (%s)" % [pulse.name, pulse.get_class()]
+	).is_true()
 
 
 func test_every_terrain_body_carries_a_rectangle_shape_on_the_terrain_layer() -> void:
