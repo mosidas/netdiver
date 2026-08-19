@@ -637,4 +637,30 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - 10.3 は宣言行の完全一致 1 本に加え、`git diff -U0 5b4e240 -- src/player/player.gd` で `signal fired` 行が追加・削除のどちらにも現れないことでも確認した。追加されたシグナルは `ability_fired(directions: Array[Vector2i])` の 1 本のみ。8.7 は `player_stats.gd` の差分が `5 insertions / 0 deletions`(空行 1 + `@export` 4 行)で既存 14 行が無変更であること、および `player_stats_test.gd` の 12 ケースが緑であることで確認した。
   - **[FYI] `--diff-filter=MDR` は追加(A)を落とすため、凍結対象のディレクトリへの新規ファイルの持ち込みは検査に載らない。** レビュアーが複製上で `docs/specs/001-mvp/003-foot-enemies/INJECTED.md` と `tests/player/injected_test.gd` を足しても緑のままであることを実測した。今回は A の全 44 行を File Structure Plan と 1 対 1 で突き合わせ、計画外の追加が 0 件であることを別途立証したため実害は無い。**後続 unit で同じ検査を写す場合は、A 側を File Structure Plan と突き合わせる手順を対にして持つこと。**
   - **[Nit] 未対処(記録のみ、2 件)**: (a) `git diff -- <存在しないパス>` は無言で exit 0 になるため、パス指定の打ち間違いが検査を空振りさせうる(今回は 6 つの起点すべての実在を確認済み)。(b) `find src -name '*_test.gd'` は命名規約に従うテストしか捕らえない。
+### 最終検証パネルの結果(全タスク完了時。read-only)
+
+**判定: GO。** 5 観点すべてが `APPROVED`、`UNVERIFIED` は全観点で「なし」。`[Critical]` は 0 件。差分の基点は `5b4e240`。
+
+| 観点 | VERDICT | UNVERIFIED | 主な根拠 |
+| ---- | ------- | ---------- | -------- |
+| requirements-conformance | APPROVED | なし | spec.md §7 の要件 1〜11 の全受け入れ基準 ID を列挙してテストへ 1 対 1 で突合。取りこぼし 0 件。要件 11 は記録の存在ではなく内容が 11.1〜11.7 のそれぞれに数値で答えていることを確認 |
+| security | APPROVED | なし | 外部入力・ネットワーク・永続化・依存追加が 0。`load()` / `instantiate()` / `NodePath` はすべてシーン宣言の固定値に閉じる。`AnalysisPulse` の 3 経路の自己解放と 0 orphans を実測 |
+| test | APPROVED | なし | 新規 12 スイートを全文精読し、`/tmp` の複製上で **25 種の変異注入を実測。22 種が死亡**。生存 3 種は等価変異 1 + 既知 Nit 2 |
+| runtime-smoke | APPROVED | なし | 2 つの仮ステージと `main.tscn` を自分で起動し、撃破 → 演出 → 到達 → 取得 → 拡散弾 → 使い切り → 副武器復帰、および上書きを独立に観測。プロジェクト側の error / warning は 0 件 |
+| contract | APPROVED | なし | spec.md §5.1〜§5.6・§6.1〜§6.5 の公開点を実装と 1 対 1 で突合し、**不足も過剰も 0**。`Player` の追加公開点は `ability_fired` / `ability_slot` / `grant_ability()` の 3 つのみ |
+
+**パネルが挙げた所見(いずれも `[Nit]` / `[FYI]` であり完了を止めない。重複を排して統合)**:
+
+1. **新しい仮ステージ 2 つの地形色を誰も固定していない**(test・requirements-conformance が独立に指摘)。`analysis_dev_stage.tscn` の 3 箇所の `color` を `AnalysisPulse` と同じ緑へ変える変異を当てても `make test` 全体が緑のまま(test 観点が実測)。**現物は既存とバイト同一の色を写しており現時点の要件 4.16 違反は無い**が、将来の変更は検査に載らない。閉じるなら `tests/ability/analysis_pulse_scene_test.gd` の `EXISTING_PLACEHOLDER_SCENE_PATHS` へ 2 シーンを足す。5.2a から 3 タスク持ち越した既知 Nit。
+2. **「アクターが床の上に立つ」の検査が床の x 範囲を見ていない**。床の当たり判定を 320×16 → 60×16 へ縮めても全緑(実測)。凍結済みの `tests/stage/enemy_dev_stage_test.gd` から引き継いだ弱さで現物は正しい。5.2a からの既知 Nit。
+3. `AnalysisDevStage._on_enemy_defeated()` の `get_node(enemy_path)` に null ガードが無い(security・contract が独立に指摘)。すぐ上の `pulse_scene == null` を早期 return で守っているのと非対称であり、解決に失敗すると `launch()` を通っていない `AnalysisPulse` がツリーに残る。出荷される 2 つのシーンでは `[connection]` 検査の (d) が到達を塞いでいる。既存の `charger_enemy.gd` も `get_node()` を使うため様式としては一貫する。
+4. `AbilitySlot.remaining_uses` は公開ミュータブルフィールドであり、不変条件 `0 <= remaining_uses` を外部の代入に対して強制できない(contract)。spec.md §5.1 が公開 var として宣言しており実装は契約どおりで、`AbilitySlot` の外に代入は 0 件。凍結済み unit #2 の `Health.current` が同形の先例。
+5. `tests/ability/ability_analysis_test.gd` の要件 3.5 の検査は `source.is_empty()` の空振り経路を残す。現在は本経路へ入るが、`analysis_dev_stage.gd` の改名・移動で黙って無害化しうる(test)。
+6. `Player._spawn_spread()` は `SpreadResolver.resolve()` が空を返すと弾 0 発で `ability_fired` を発火する(contract)。`AimResolver` が必ず 8 方向を返すため**到達不能**であり、到達しない防御をテストで固定しない規律と整合する。
+7. `_ensure_weapons()` の名前と責務のずれ(武器 + 第 3 の枠)が 4.1 から未対処のまま残る(structure 相当の Nit)。
+
+**上流(企画)への申し送り(本単位では値を変えない)**: `ability_damage` = 20 と `ShooterEnemy.max_hp` = 20 が一致するため、拡散弾は射撃型を 1 発で倒す(「解析で得た能力が、それをくれた種別を一撃で倒す」)。`AimResolver` が接地中に下向き成分を落とすため、拡散の形は地上 5 通り・空中 8 通りである。飛翔 0.4 秒は 4 回の独立した観測すべてで厳密に 24 フレームで、調整は要らない。
+
+**人間に残る確認**: 手触り(解析 → 取得の一連が面白いか、0.4 秒の間が気持ちよいか、3 回という回数が妥当か)。パネルは描画と数値の確認までであり、この判断を含まない。
+
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
