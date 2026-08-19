@@ -314,7 +314,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `[ext_resource]` に `uid=` を書かない
     - 検証コマンド: `make test TESTS=res://tests/stage`
 
-  - [ ] 5.3 (P) `analysis_overwrite_dev_stage.tscn` を作る
+  - [x] 5.3 (P) `analysis_overwrite_dev_stage.tscn` を作る
     _Requirements: 9.1, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 9.14, 9.15, 9.16, 9.18, 9.20_
     _Boundary: AnalysisDevStage_
     _Depends: 3.3, 5.1_
@@ -563,4 +563,13 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - レビュアーが 12 種の変異注入を独立に実測し、すべて死亡した(両方の binds を同じ敵へ・binds の入れ替え・`node_paths` の削除・`pulse_scene` の差し替えと削除・`died` の接続の削除と接続先の付け替え・両ハンドラ名の改名・`target` の付け替え・`defeated` 接続の削除)。
   - **[Nit] 未対処(記録のみ)**: テストの `OBSERVED_MILLIS` の根拠のコメントは「飛翔だけで 1 秒以上」と読めるが、実測は飛翔 ≈0.94 秒であり余裕を作っているのは telegraph 0.4 秒との合計 ≈1.33 秒である。振る舞いへの影響はない。5.2a の Nit 2 件(床の x 範囲を見ていない・新しい仮ステージの地形色を誰も固定していない)は本タスクでも未着手。
   - タスク 5.2 の完了時点で `make test` 全体は **573 test cases / 36 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
+- **タスク 5.3 の成果と 6.1・6.3 への申し送り**:
+  - 2 つ目のシーンの起動は `godot --path <プロジェクトのルート> res://src/stage/analysis_overwrite_dev_stage.tscn`。用途は**同種別(射撃型)の再取得による上書き**であり、`analysis_dev_stage.tscn`(取得から使い切りまでと写せない種別)と対になる(6.1 の追記の材料)。
+  - 床・壁は `enemy_dev_stage.tscn` と**バイト単位で同一**(レビュアーが diff で確認)。地形色は既存と同色のため `EXISTING_PLACEHOLDER_SCENE_PATHS` への追記は不要。`[ext_resource]` の `uid=` は 0 件、`load_steps=7`。新規の `.uid` は `tests/stage/analysis_overwrite_dev_stage_test.gd.uid` の 1 本のみ。
+  - **2 スイート間の重複(約 85%)は意図的である。** 「1 つ目のテストを共通化のために書き換えない」制約に従い、ヘルパ 7 本はコピーで持ち込んだ。差し替えが要る期待値(`ACTOR_NAMES`・射撃型 2 / 突進型 0・許可集合と witness への `ShooterEnemy2.projectile_scene`・型検査 `is ShooterEnemy`)はすべて置換済みで、1 つ目の期待値の残留は 0 箇所(レビュアーが 2 ファイルの diff を精査)。将来まとめる場合は共通の基底スイートへ切り出す形になる。
+  - 本スイート固有の追加は 9.7 の 2 本(`is_same` によるスクリプトリソースの同一性・`src/stage/` の `analysis_*.gd` が 1 本)と、同種別 2 体が重ならないことの 1 本。
+  - レビュアーが 13 種の変異注入を独立に実測し、すべて死亡した(両方の binds を同じ敵へ・binds の入替・`node_paths` 削除・スクリプトの複製と継承・2 体目を突進型へ・座標の移動・`Camera2D` の追加・3 体目を中間ノードへ隠す・`pulse_scene` の差し替えと削除・`died` 接続の削除・`target` の付け替え)。**`pulse_scene` の差し替えを落としたのは 9.16 の 1 ケースだけ**であり、5.2a の申し送りの予測が実測で裏付けられた。
+  - **6.3(目視)へ**: 実行時プローブで「2 体それぞれの撃破 → 到達で `remaining_uses` が `ability_uses`(3)へ戻る(加算されない)」ことを確認済み。目視は**拡散弾を 1 回以上撃って減らしてから** 2 体目を撃破する順で行うと差が見える。手前の `ShooterEnemy`(距離 ≈112.3)は索敵圏内で撃ってくるが、奥の `ShooterEnemy2`(≈200.2 > `detect_range` 160)は初期状態では動かない。**エディタでシーンを開いても保存し直さないこと**(`uid=` が書き戻される)。
+  - **[Nit] 未対処(記録のみ)**: 5.2a から持ち越した弱点 2 件(床の x 範囲を見ていない・新しい仮ステージ 2 つの地形色を誰も固定していない)は本スイートにもそのまま残る。実ファイルは既存と同色・同構成なので現時点の違反は無い。また `_distance_to_player()` 等が `Player` を名前で強く取得するため、`Player` を中間ノードへ入れる変異は failures に加えてエンジン側の errors も出す(殺せてはいる)。
+  - タスク 5.3 の完了時点で `make test` 全体は **594 test cases / 37 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans**。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
