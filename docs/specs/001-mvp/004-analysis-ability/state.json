@@ -1,11 +1,15 @@
 {
   "workflow": "sdd",
   "unit": "analysis-ability",
-  "state": "implementing",
+  "state": "completed",
   "approvals": {
     "spec": true,
     "tasks": true
   },
   "created": "2026-08-17",
-  "updated": "2026-08-17"
+  "updated": "2026-08-19",
+  "frozen": {
+    "spec.md": "3227a25903da79810f644c424420e4c7f1d035841a1f07858f87bde5476b92f8",
+    "tasks.md": "ec7d2aee1e10b6fbab1bca44637f1a6e0f7f959aa8150e541d91fdf14a670b2e"
+  }
 }
