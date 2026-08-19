@@ -10,6 +10,10 @@ extends CharacterBody2D
 signal died
 signal fired(direction: Vector2i, is_secondary: bool)
 
+## 第 3 の枠の発射。`fired` を拡張せずに新設する: `is_secondary: bool` は 3 つ目の枠を
+## 表せず、引数を増やすと既存の受け手にとって `fired` の意味が変わる
+signal ability_fired(directions: Array[Vector2i])
+
 const MISSING_STATS_ERROR: String = "Player: stats が設定されていない。既定値の PlayerStats を使う"
 const INVALID_DELTA_ERROR: String = "Player.apply_command(): delta は正でなければならない。速度を変えずに返る"
 const INVALID_STAT_ERROR_FORMAT: String = "Player: stats.%s は正でなければならない(現在値: %s)"
@@ -24,6 +28,10 @@ const MISSING_PROJECTILE_SCENE_ERROR: String = (
 
 ## 体力。待機時間の計測と回復の進行は `Health` が持ち、`Player` は経過時間を自分で持たない
 var health: Health
+
+## 第 3 の武器枠。残り回数とクールダウンの進行は `AbilitySlot` が持ち、`Player` は
+## 戻り値を読むだけで状態を自分で持たない。外から読める観測点として公開する
+var ability_slot: AbilitySlot
 
 var facing: int = 1
 
@@ -80,6 +88,15 @@ func take_damage(amount: int) -> void:
 	health.take_damage(amount)
 
 
+## 第 3 の枠へ能力を与える。残り回数は `stats.ability_uses` で置き換わる。
+##
+## 種別を引数に取らない: 写せるかどうかの判断は `AbilityAnalysis` にあり、`Player` は
+## 判断の結果だけを受け取る
+func grant_ability() -> void:
+	_ensure_ability_slot()
+	ability_slot.grant(stats.ability_uses)
+
+
 func _physics_process(delta: float) -> void:
 	var cmd: PlayerCommand = input_source.call()
 	apply_command(cmd, delta, is_on_floor())
@@ -94,7 +111,18 @@ func _update_weapons(cmd: PlayerCommand, direction: Vector2i, delta: float) -> v
 	if cmd.primary_held and _primary_weapon.try_fire():
 		_spawn_projectile(direction, stats.primary_bullet_speed, stats.primary_damage, false)
 
-	if _secondary_weapon.update(cmd.secondary_held, delta):
+	# 占有しているかどうかを `update()` の前に控える: 後の値で判定すると、最後の 1 回を
+	# 撃ったフレームでその押下が第 3 の枠と副武器の両方に効く
+	var is_slot_empty: bool = ability_slot.is_empty
+	# 空のフレームでも呼ぶ: 呼ばないと押下の記録が飛び、取得の時点で押しっぱなしの
+	# ボタンが次のフレームで縁と誤認される
+	if ability_slot.update(cmd.secondary_held, delta):
+		_spawn_spread(direction)
+
+	# 占有中は「離した」を渡す: 凍結する形にするとクールダウンが実時間で進まず、
+	# 満たなかった充電が占有をまたいで持ち越される
+	var secondary_held: bool = cmd.secondary_held and is_slot_empty
+	if _secondary_weapon.update(secondary_held, delta):
 		_spawn_projectile(direction, stats.secondary_bullet_speed, stats.secondary_damage, true)
 
 
@@ -115,16 +143,54 @@ func _on_health_depleted() -> void:
 # 武器を `_ready()` で作らない: `apply_command()` はツリーへ載せずに呼べる契約であり、
 # `_ready()` を通らない呼び出しで武器が null になる
 func _ensure_weapons() -> void:
+	# 生成を `_ensure_ability_slot()` に分ける: 下の早期 return は `_primary_weapon` を見ており、
+	# 同じガードへ載せると `grant_ability()` が先に作った枠を作り直して取得を捨てる
+	_ensure_ability_slot()
+
 	if _primary_weapon != null:
 		return
 	_primary_weapon = PrimaryWeapon.new(stats.primary_interval)
 	_secondary_weapon = SecondaryWeapon.new(stats.secondary_charge_time, stats.secondary_cooldown)
 
 
+# 第 3 の枠を `_ready()` で作らない: `grant_ability()` はツリーへ載せずに呼べる契約であり、
+# `_ready()` を通らない呼び出しで ability_slot が null になる
+func _ensure_ability_slot() -> void:
+	if ability_slot != null:
+		return
+	ability_slot = AbilitySlot.new(stats.ability_cooldown)
+
+
+# 拡散の 3 方向を自分で組み立てない: 隣り合いの決め方が `SpreadResolver` と二重になり、
+# 環の折り返しの扱いが場所ごとに分かれる
+func _spawn_spread(direction: Vector2i) -> void:
+	var directions: Array[Vector2i] = SpreadResolver.resolve(direction)
+	for spread_direction: Vector2i in directions:
+		var launched: bool = _launch_projectile(
+			spread_direction, stats.ability_bullet_speed, stats.ability_damage
+		)
+		# 生成できなかった時点で打ち切って発火しない: 弾の無い発射を受け手が本物と区別できない
+		# (`_spawn_projectile()` が `fired` を出さずに返るのと同じ扱い)
+		if not launched:
+			return
+
+	# 発火をループの外に置く: 方向ごとに発火すると、受け手が 1 回の発射を 3 回と読む
+	ability_fired.emit(directions)
+
+
 func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_secondary: bool) -> void:
+	# 生成できなかったときに発火しない: 弾の無い発射を受け手が本物の 1 発と区別できない
+	if not _launch_projectile(direction, speed, damage):
+		return
+	fired.emit(direction, is_secondary)
+
+
+# 生成を `_spawn_projectile()` から分ける: `fired` は主武器・副武器の 2 枠に対応する
+# シグナルであり、第 3 の枠の弾に付けると受け手が枠を区別できなくなる
+func _launch_projectile(direction: Vector2i, speed: float, damage: int) -> bool:
 	if projectile_scene == null:
 		push_error(MISSING_PROJECTILE_SCENE_ERROR)
-		return
+		return false
 
 	var projectile: Projectile = projectile_scene.instantiate()
 	# 自分の子にしない: 弾がプレイヤーと一緒に動き、進行方向どおりに飛ばなくなる。
@@ -137,7 +203,7 @@ func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_second
 	# 位置を決めてから launch() する: 射程は launch() を呼んだ時点の位置から測る
 	projectile.global_position = global_position
 	projectile.launch(direction, speed, damage, stats.bullet_max_distance)
-	fired.emit(direction, is_secondary)
+	return true
 
 
 # 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`PlayerStats` へ
