@@ -328,7 +328,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 9.18(`player.died` の `[connection]`)・9.14・9.15・9.16・9.6・9.20 は 5.2 と同じ形で置く。共通のアサーションを 5.2 のテストから写す場合も、**期待値(座標・体数・種別)はこのシーンのものへ差し替える**。**9.16 を省かない** — このシーンの `pulse_scene` が別の `PackedScene` を指す誤りは、9.15(null でない)だけでは落ちない
     - 検証コマンド: `make test TESTS=res://tests/stage`
 
-- [ ] 6. ドキュメント反映と目視での確認
+- [x] 6. ドキュメント反映と目視での確認
 
   自動テストに載せられない振る舞い(spec.md §7 Requirement 11)を仮ステージの起動で確かめ、記録を残す。
 
@@ -372,11 +372,11 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 6.2 と同じく GUI の Godot が要る
     - 検証コマンド: `godot --path . res://src/stage/analysis_overwrite_dev_stage.tscn`
 
-- [ ] 7. 凍結済みの契約の非変更の横断検査
+- [x] 7. 凍結済みの契約の非変更の横断検査
 
   spec.md §6.7 は本単位が変更する既存ファイルを 3 つに限っている。実装が終わった時点で、それ以外の追跡済みファイルが 1 つも変わっていないことを機械で示す。
 
-  - [ ] 7.1 凍結の対象が変わっていないことを検査する
+  - [x] 7.1 凍結の対象が変わっていないことを検査する
     _Requirements: 9.21, 9.22, 9.24, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9_
     _Boundary: repository_
     _Depends: 4.3, 5.3, 6.1_
@@ -630,4 +630,11 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   **実機の挙動と文書の食い違い**: 見つからなかった。
 
+- **タスク 7.1 の結果(凍結の横断検査。成果物への変更は 0 バイト)**:
+  - 4 つの検証コマンドを実装者とレビュアーが**独立に**実行し、`FROZEN_OK` / `SIGNAL_OK` / `LAYOUT_OK` と `make test` = **594 test cases / 37 test suites / 0 errors / 0 failures / 0 flaky / 0 skipped / 0 orphans / exit 0** を実測した(基線 407 cases / 25 suites からの増分 +187 / +12 は File Structure Plan の新規テスト 12 本と一致する)。
+  - **凍結の検査が恒真でないことを実測で示した。** レビュアーが `/tmp` の複製に 6 種の変異(`tests/player/player_stats_test.gd` の M・`project.godot` の M・`src/enemy/enemy_kind.gd` の D・unit #3 の `spec.md` の M・`src/stage/dev_stage.gd` の R・除外指定を外す負の対照)を当て、すべて検出されることを確認した。作業ツリーには触れていない。
+  - パス指定に依らない全体の差分(`git diff --name-status 5b4e240 -- .`)でも **M は `docs/testing.md`・`src/player/player.gd`・`src/player/player_stats.gd` の 3 件のみ、D と R は 0 件**であり、spec.md §6.7 が許す 3 ファイルと完全に一致する。基点 `5b4e240` は `Merge pull request #10 from mosidas/foot-enemies` で HEAD の真の祖先。
+  - 10.3 は宣言行の完全一致 1 本に加え、`git diff -U0 5b4e240 -- src/player/player.gd` で `signal fired` 行が追加・削除のどちらにも現れないことでも確認した。追加されたシグナルは `ability_fired(directions: Array[Vector2i])` の 1 本のみ。8.7 は `player_stats.gd` の差分が `5 insertions / 0 deletions`(空行 1 + `@export` 4 行)で既存 14 行が無変更であること、および `player_stats_test.gd` の 12 ケースが緑であることで確認した。
+  - **[FYI] `--diff-filter=MDR` は追加(A)を落とすため、凍結対象のディレクトリへの新規ファイルの持ち込みは検査に載らない。** レビュアーが複製上で `docs/specs/001-mvp/003-foot-enemies/INJECTED.md` と `tests/player/injected_test.gd` を足しても緑のままであることを実測した。今回は A の全 44 行を File Structure Plan と 1 対 1 で突き合わせ、計画外の追加が 0 件であることを別途立証したため実害は無い。**後続 unit で同じ検査を写す場合は、A 側を File Structure Plan と突き合わせる手順を対にして持つこと。**
+  - **[Nit] 未対処(記録のみ、2 件)**: (a) `git diff -- <存在しないパス>` は無言で exit 0 になるため、パス指定の打ち間違いが検査を空振りさせうる(今回は 6 つの起点すべての実在を確認済み)。(b) `find src -name '*_test.gd'` は命名規約に従うテストしか捕らえない。
 - **レビューが見つけた 3.4 の生存変異(記録のみ、本単位では対処しない)**: `AbilityAnalysis` に「不正値を 1 度受け取ったら以降は常に偽」というラッチ型の状態を入れると、ケースの実行順の都合で 1.2 のスイートは全緑のまま通る。実装は `static` の純粋関数であり 3.4 を満たすため欠陥ではないが、将来 `AbilityAnalysis` に手を入れる場合は「異常値を挟んだ前後で**真を返す側**も対にして見る」形へ足すと閉じる。
