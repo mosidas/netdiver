@@ -72,6 +72,20 @@ godot --path <プロジェクトのルート> res://src/stage/enemy_dev_stage.ts
 
 **用途が違う**。`dev_stage.tscn` はプレイヤー単体の手触りを見る場、`enemy_dev_stage.tscn` は敵との戦闘を見る場である。
 
+撃破からの解析(演出の飛翔・第 3 の枠の取得と使用)は、床・壁とプレイヤー・敵を置いた仮ステージ 2 つで目で確かめる。**この 2 つも用途が違う**。1 つの仮ステージに置ける敵は 2 体までのため、確かめることを 1 つに詰め込めず、シーンを分けている(スクリプトは 2 つのシーンで共有する)。
+
+取得から使い切りまでの一連(撃破・演出の到達・拡散弾の発射・空枠への復帰)と、写せない種別(突進型)を撃破しても枠が変わらないことは、射撃型 1 体・突進型 1 体を置いた `src/stage/analysis_dev_stage.tscn` で確かめる。
+
+```sh
+godot --path <プロジェクトのルート> res://src/stage/analysis_dev_stage.tscn
+```
+
+同じ種別(射撃型)を続けて解析したときに残り回数が `ability_uses` へ戻ること(同種別の再取得による上書き)は、射撃型 2 体を置いた `src/stage/analysis_overwrite_dev_stage.tscn` で確かめる。
+
+```sh
+godot --path <プロジェクトのルート> res://src/stage/analysis_overwrite_dev_stage.tscn
+```
+
 - **`--headless` では確認できない**。画面が出ないため目視にならない。`make test` の経路とは別に、GUI の Godot を起動すること
 - `run/main_scene` は `res://main.tscn` のままであり、仮ステージは引数で明示したときだけ起動する
 - 目視でしか確認できない事項は、その作業単位の `tasks.md` の `## Implementation Notes` に「いつ・どの環境で・何を確認したか」を記録する。`make test` には現れないため、記録しないと確認した事実が残らない
