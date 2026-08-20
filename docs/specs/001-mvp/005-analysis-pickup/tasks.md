@@ -117,7 +117,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   取得の新形式を、旧形式(第 3 の枠と演出)の隣に足す。この段だけで検証が緑になる。断片は相手を `has_method()` で見るため、`Player.grant_upgrade()` がまだ無くても成立する(テストはスタブで駆動する)。
 
-  - [ ] 1.1 (P) `AnalysisFragment` の接触と解放を実装する
+  - [x] 1.1 (P) `AnalysisFragment` の接触と解放を実装する
     _Requirements: 7.1, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.16, 7.17, 7.18_
     _Boundary: AnalysisFragment_
     - 対象ファイル: `src/ability/analysis_fragment.gd`(新規), `tests/ability/analysis_fragment_test.gd`(新規)
@@ -456,4 +456,29 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 ## Implementation Notes
 
-(このセクションは dev-implement が実装中の学習・選択した知識 port・横断的な気付き・レビューを通過した境界外変更の申告を追記する領域。初期は空でよい)
+### 注入した知識 port
+
+`python3 .claude/skills/dev-core/scripts/ports.py --skill dev-implement --root docs/dev/ports` の走査結果は 1 件。
+
+| name | パス | condition | 判定 |
+| ---- | ---- | --------- | ---- |
+| `mutation-discipline` | `docs/dev/ports/mutation-discipline.md` | 常時 | 全サブタスクへ注入する(`inject` に dev-implement があり `condition: 常時`)。本ファイル「全タスク共通の実装の規律」も同 port を指している |
+
+`_Knowledge:` 注記を持つサブタスクは無い。条件付き port も存在しないため、全サブタスクで注入は上の 1 件である。
+
+### 実装前の基線
+
+- `make test`: 594 test cases / 37 suites / errors 0 / failures 0 / flaky 0 / skipped 0 / orphans 0(実測)。
+- `check.py`(`--def .claude/skills/flow-sdd/workflow.json --ports-root docs/dev/ports`): error 0 / warning 0。
+
+### タスク 1.1 の学習
+
+- **静止した `CharacterBody2D` を重ねて置くだけで `body_entered` は届く**(実測)。移動も `move_and_slide()` も要らない。通知は 1〜2 物理フレーム目に来る。後続の接触系のタスクはこの形で駆動できる。
+- **「操作を止めない」(`SceneTree.paused`)の検出力は、同期の接触(`body_entered.emit()`)で、しかも両方向で見る。**
+  - 停止を**立てる**変異(`paused = true` の挿入)は、実フレームで駆動するケースを待ちへ変えるため、失敗ではなく **120 秒のタイムアウト(exit 124)** として現れる。同期の接触のケースを実フレームのケースより**前**に置くと、そのケースが FAILED として報告される。
+  - 停止を**落とす**変異(`paused = false` の挿入)は、既定(偽)のところでしか観測していないと**一切現れない**(規律 1)。既定のところでの接触と `paused = true` を置いたところでの接触の 2 つを 1 ケースに並べると、どちらの向きも同じケースが落とす。
+  - `Engine.time_scale` は物理を止めないため実フレームのままでよい(非対称の理由)。ただし既定と別の値(0.5)から始める点は同じ。
+  - 停止のケースはポーズを観測した直後に**テスト本体で**元へ戻す(`after_test()` の復元だけに頼ると、同じスイートの後続のケースが物理フレームを消化できなくなる)。
+- 断片はシーンを持たなくても振る舞いを検証できる。テストは `collision_layer`/`collision_mask`/当たり判定をテスト側で組み立て、シーンの契約(1.2)を先取りしない。
+- レビューの `[FYI]`: 既存の `tests/ability/analysis_pulse_test.gd` の `_assert_the_time_stays_untouched()` も `paused` を既定側だけで見ており、同じ穴を持つ。ただし同スイートはタスク 3.4 で削除されるため対処しない。
+
