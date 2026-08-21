@@ -788,3 +788,246 @@ spec.md §8 が定める反映先 3 つの確認結果:
 | 6.1 の後 | 553 | 35 |(ドキュメントのみ。変更なし)
 | 7.1 の後 | 553 | 35 |(6.2 は目視のみ・7.1 は検査のみ。どちらもテストを変えていない。見込みの 35 suites と一致)
 
+### 最終検証パネルの結果(2026-08-22)— **NO-GO**
+
+事前ゲート(dev-implement 14.1)は通過している。全 19 サブタスクが `[x]`、`_Blocked:` なし、`check.py`(`--def .claude/skills/flow-sdd/workflow.json --ports-root docs/dev/ports`)が **error 0 / warning 3**(行数超過のみ。`tasks.md` 790 行・`player_spread_test.gd` 685 行・`analysis_dev_stage_scene_test.gd` 614 行)。パネル実行前の `make test` は **553 cases / 35 suites / errors 0 / failures 0 / flaky 0 / skipped 0 / orphans 0 / exit 0**。
+
+| 観点 | 実行場所 | VERDICT | Critical | UNVERIFIED |
+| ---- | ---- | ---- | ---- | ---- |
+| requirements-conformance | 隔離複製 `/tmp/nv-panel/reqconf` | APPROVED | 0 | なし |
+| security | 隔離複製 `/tmp/nv-panel/security` | APPROVED | 0 | なし |
+| structure | 隔離複製 `/tmp/nv-panel/structure` | APPROVED | 0 | なし |
+| **test** | 隔離複製 `/tmp/nv-panel/test` | **REJECTED** | **4** | なし |
+| **runtime-smoke** | 隔離複製 `/tmp/nv-panel/runtime` | **REJECTED** | **1** | なし |
+
+**merge の判定**: dev-implement 14.2 の「1 観点でも `REJECTED` なら全体 NO-GO(多数決にしない)」により **NO-GO**。`UNVERIFIED` はどの観点も「なし」であるため、未検証起因ではなく**欠陥起因の NO-GO** である。
+
+#### 観点の選び方と排他の根拠
+
+- 固定 3 観点(requirements-conformance・security・test)に、実行時挙動に影響する変更であるため **runtime-smoke を必須で追加**した。あわせて `player.gd` の大幅な書き換えと 2 クラスの撤去があるため **structure** を追加した。
+- **accessibility は該当なしと判断した**(widget UI・テキスト・フォーカス可能要素・WCAG の適用面を持たないため)。**visual-conformance は独立の観点として立てず、その実体(要件 7.12〜7.15 の色の相違・9.2〜9.7 の配置・要件 12 の見え方)を runtime-smoke の観察項目 8 として担当させた**。理由は、このプロジェクトが配色トークン体系を持たず視覚の正本が spec.md §6.4 の色の相違の要件そのものであること、および独立に立てると GUI の起動が二重になることである。**この縮退は本パネルの被覆の限界として記録する**。
+- 排他(`runtime-verification.md` §3.1): 5 観点すべてに**体ごとの隔離した複製**を用意し、同時に投入した。§3.1 の 3 条件を事前に確認済み — (1) git 管理下で作業ツリーがクリーン、(2) 複製で `make test` が成立することを実測、(3) 専有資源(固定ポート・ソケット・DB)を使わず、レポート出力先は複製ごとに分かれる。
+- **検証の後、元の作業ツリーは 1 バイトも変わっていない**(`git status --porcelain` が空、`HEAD` は `08522c0` のまま。5 観点すべてが独立に確認し、パネル撤去後にも確認した)。
+
+#### Critical 5 件
+
+**C1(test / 要件 3.9)— 強化の残り回数を持ち込む変異が全体緑のまま生存する。**
+変異: `src/player/player.gd` へ `var _burst_budget: int = 999` を足し、`grant_upgrade()` で戻し、`_spawn_spread()` で減らして 0 で強化を落とす(= 残り回数つきの強化)。`make test` は 553 cases / failures 0 / exit 0 のまま。
+落ちない理由: 3.9 を検証すると主張する `tests/player/player_upgrade_test.gd::test_the_upgrade_state_is_a_single_bool` は `FORBIDDEN_STATE_TOKENS`(13 語)の**名前の拒否リスト**と `upgrad` を含む項目の型しか見ておらず、リストに当たらない名前を素通りする。
+**等価変異ではない**: `Player` のスクリプト変数は有限(10 個)であり、同じスイートが要件 3.8 で既に使っている「ちょうどの個数」の形(`test_the_player_command_keeps_exactly_five_fields` が `_script_variables(command).size()).is_equal(COMMAND_FIELD_COUNT)`)をそのまま `Player` へ適用すれば落とせる。ヘルパ `_script_variables()` は同スイートに実在する。新設スイートのため要件 11.9 とも衝突しない。
+本ファイル「タスク 5.1 の学習 > 対処しないと決めた検出力の欠陥 1」は同じ生存を申告しているが、**「要点が指示した走査の範囲内だから対処しない」は検出力の欠落を正当化しない**とパネルが判定した。
+
+**C2(test / 要件 10.5・10.6・10.4)— `PlayerStats` に 15 項目目を足す変異が全体緑のまま生存する。**
+変異: `src/player/player_stats.gd` の末尾へ `@export var ability_uses: int = 3`。`make test` 553 cases / failures 0 / exit 0。
+落ちない理由: 凍結済みの `tests/player/player_stats_test.gd:87` は `assert_array(_editor_visible_property_names(stats)).contains(STAT_NAMES)` の**非排他な検査**である。さらに要件 10.6(`src/` に `ability_*` の識別子を残さない)は**タスク 3.5 が実装時に 1 度 grep しただけ**で、リポジトリ内に自動の検査が無い(`tests/` 全体を検索して 0 件であることを独立に確認した)。
+**等価変異ではない**: 塞げないのは既存スイートの改訂だけであり、本単位が `tests/weapon/projectile_direction_test.gd` を新設したのと同じ理屈で、新しいスイートに「`@export` の項目数 == 14」「`src/` 配下に 9 語が 0 件」の 2 ケースを足せば落とせる。
+本ファイル「タスク 3.3 の学習 > 対処しないと決めた検出力の欠陥 1」の「要件 11.9 が凍結しているため塞げない」という記述は、**既存スイートの改訂に限れば正しいが、新設スイートという手段を見落としている**。
+
+**C3(test / 要件 2.6)— 短さを理由に拒否しない契約を否定する変異が生存する。**
+変異: `src/weapon/projectile.gd:56` の `if direction == Vector2.ZERO:` を `if direction.is_zero_approx():` へ。`make test TESTS=res://tests/weapon` は 84 cases / failures 0 / exit 0(生存)。
+落ちない理由: `tests/weapon/projectile_direction_test.gd:46` の `UNNORMALIZED_DIRECTIONS = [Vector2(0.3, 0.0), Vector2(3.0, 1.0)]` はどちらも `CMP_EPSILON`(1e-5)より十分大きく、**境界のすぐ外(規律 6)を 1 つも置いていない**。
+**等価変異ではない(実測)**: 複製に 1 ケースだけの検査用スイートを置き `projectile.launch(Vector2(0.000001, 0.0), 260.0, 11, 600.0)` で駆動したところ、元の実装では PASSED(弾が進む)、変異では FAILED(`frames_moved == 0`)となり、変異は 1 ケースで死ぬ。
+本ファイル「タスク 4.2 の学習」の 1 件目が「等価変異(規律 7)として固定するテストを意図的に置いていない」と記しているが、**実測はこれを否定する**。
+
+**C4(test / 要件 11.3)— `fired` のシグナル宣言の型を変える変異が全体緑のまま生存する。**
+変異: `src/player/player.gd:11` の `signal fired(direction: Vector2i, is_secondary: bool)` を `direction: Vector2` へ。`make test` 553 cases / failures 0 / exit 0。
+落ちない理由: GDScript はシグナルの宣言型を発火時に強制しないため、`_spawn_spread()`/`_spawn_projectile()` が渡す実引数は `Vector2i` のままであり、振る舞い側の対(`tests/player/player_spread_test.gd::test_the_fired_direction_stays_an_eight_way_vector2i_while_upgraded`)は**値の型**しか観測していない。`tests/` 全体に `get_signal_list` を読む検査も `signal fired` の宣言行を読む検査も存在しない(独立に確認した)。
+**宣言そのものの凍結は「凍結の正本」の表どおりタスク 7.1 の 1 回きりの手作業の照合に置かれており、退行を捕らえるテストが無い。** 本単位は同種の凍結を `aim_resolver.gd`・`[input]` 節・`player.tscn` の 3 つについて sha256 のケースとして自動化しており、**`fired` だけがその形を持たない**。
+
+**C5(runtime-smoke / 実行時のエラー 0 件)— 写せる種別の撃破のたびにエンジンの ERROR が 1 回出る。**
+`ERROR: Can't change this state while flushing queries. Use call_deferred() or set_deferred() to change monitoring state instead.` / `at: area_set_shape_disabled (godot_physics_server_2d.cpp:354)` / `[0] _on_enemy_defeated (res://src/stage/analysis_dev_stage.gd:38)` `[1] take_damage (res://src/enemy/enemy.gd:65)` `[2] _on_area_entered (res://src/enemy/hurtbox.gd:33)`
+**独立に起動した 8 回すべてで再現**(各回とも `grep -c '^ERROR'` = 1、文言は完全に同一)。`main.tscn` の起動では ERROR 0 件。
+**原因の同定は推定でなく実測**: 複製で `add_child(fragment)` を `call_deferred` 経由へ差し替える変異を注入したところ、同じ台本で ERROR が 0 件になった。
+これは `runtime-verification.md` §2 の共通の検証項目「console・サーバログにエラーが 0 件」に反する。**機能上の破綻は観測されなかった**(断片は撃破位置に正しく出る・当たり判定が効く・接触で解放される)が、本観点の合格基準は「エラー 0 件」であり立証できないため不合格である。
+
+#### 最終検証の照合(COVERAGE の集約)
+
+`_Requirements:` に現れる **142 件すべてが 1 つ以上の観点で照合され、未照合は 0 件**である(requirements-conformance が 142 件を全件照合し、test が 30 件の変異で、runtime-smoke が要件 12 の 7 件と視覚の識別性を実行時に照合した)。以下は ID → 照合した対象 → 立証の手段。
+
+| ID | 照合した対象 | 立証の手段 |
+| -- | ---- | ---- |
+| 1.1 | `spread_resolver_test::test_resolve_returns_three_elements_for_every_direction` ほか | テスト緑 |
+| 1.2 | 同 `::test_resolve_returns_the_normalized_argument_first_for_every_direction` | テスト緑 |
+| 1.3 | 同 `::test_resolve_turns_the_second_and_third_to_opposite_sides_for_every_direction`(符号込み) | テスト緑 + **変異 M1 死亡**(回転の符号の入れ替えで 24 failures) |
+| 1.4 | 同上(もう片側の符号) | テスト緑 + 変異 M1 死亡 |
+| 1.5 | 同 `::test_resolve_returns_unit_vectors_for_every_direction` | テスト緑 |
+| 1.6 | 同 `::test_resolve_separates_the_second_and_third_by_forty_degrees`(1.3/1.4 と独立のケース) | テスト緑 |
+| 1.7 | 同 `::test_resolve_returns_distinct_directions_for_every_direction` | テスト緑 |
+| 1.8 | 同 `::test_resolve_never_returns_the_zero_vector` | テスト緑 |
+| 1.9 | 上記全ケースが `EIGHT_DIRECTIONS` 8 件を走査 + `::test_the_direction_table_covers_the_eight_directions` | テスト緑 |
+| 1.10 | 同 `::test_spread_degrees_is_twenty` + `::test_the_spread_angle_is_not_built_outside_the_resolver` | テスト緑 + **変異 M2 死亡**(`player.gd` へ角度の自前計算を複製) |
+| 1.11 | 同 `::test_resolve_returns_an_empty_array_for_an_invalid_direction` ほか(`ZERO`・`(2,0)`・`(0,-2)`・`(1,2)`・`(-2,-1)`) | テスト緑 |
+| 1.12 | 同 `::test_resolve_returns_a_separate_array_on_each_call` | テスト緑 |
+| 1.13 | 同 `::test_resolve_takes_a_vector2i_argument` + `aim_resolver.gd` の sha256 + `player_spread_test` の振る舞い | テスト緑 + **変異 M3 死亡** |
+| 2.1 | `projectile_direction_test::test_launch_declares_the_direction_as_a_float_vector` | テスト緑 |
+| 2.2 | 同 `::test_launch_moves_along_every_direction_given_as_vector2i`(8 方向) | テスト緑 |
+| 2.3 | 同 `::test_launch_moves_along_directions_off_the_eight_axes`(20 度・65 度等) | テスト緑 |
+| 2.4 | 同 `::test_launch_keeps_the_speed_on_a_diagonal_and_an_off_axis_direction` | テスト緑 + **変異 M6 死亡**(`.normalized()` の削除で 10 failures) |
+| 2.5 | 同 `::test_launch_rejects_a_zero_vector2_direction` + `::..._vector2i_...` | テスト緑 |
+| 2.6 | 同 `::test_launch_accepts_directions_that_are_not_unit_length` | **変異 M5 生存 → C3(欠陥)** |
+| 2.7 | `projectile.gd` の `ZERO_DIRECTION_ERROR` が据え置き + 凍結 `projectile_test.gd` 19 ケース緑 | `git diff` + テスト緑 |
+| 2.8 | `projectile_direction_test::test_launch_keeps_the_parameter_names_and_order` | テスト緑 + **変異 M4 死亡**(引数の改名) |
+| 2.9 | 同 `::test_projectile_scene_keeps_its_collision_layer_and_mask` + `git diff` 空 | `git diff` + テスト緑 |
+| 3.1 | `player_upgrade_test::test_a_new_player_is_not_upgraded`(3 経路) | テスト緑 |
+| 3.2 | 同 `::test_grant_upgrade_makes_the_player_upgraded` | テスト緑 |
+| 3.3 | 同 `::test_grant_upgrade_is_idempotent` | テスト緑 |
+| 3.4 | 同 `::test_the_upgrade_survives_the_passage_of_physics_frames`(実フレーム) | テスト緑 |
+| 3.5 | 同 `::test_assigning_the_property_directly_does_not_change_it` ほか(両方向) | テスト緑 + **変異 M8 死亡**(setter の追加) |
+| 3.6 | 同 `::test_grant_upgrade_works_on_a_player_outside_the_tree` | テスト緑 |
+| 3.7 | 同 `::test_grant_upgrade_does_not_inspect_the_health` | テスト緑 |
+| 3.8 | 同 `::test_the_player_command_keeps_exactly_five_fields` + `[input]` 節の sha256 | テスト緑 + `git diff` 空 |
+| 3.9 | 同 `::test_the_upgrade_state_is_a_single_bool` | **変異 M7 生存 → C1(欠陥)** |
+| 4.1 | `player_spread_test::test_the_upgraded_primary_spawns_three_projectiles_on_the_frames_it_fires` | テスト緑 |
+| 4.2 | 同 `::test_the_spread_flies_in_the_resolver_directions_at_the_stats_speed`(8 方向) | テスト緑 + **変異 M12 死亡**(生成順の入れ替えで 16 failures) |
+| 4.3 | 同 `::..._carry_the_primary_damage_from_stats` ほか 3 項目を差し替え | テスト緑 + **変異 M10 死亡**(`bullet_max_distance` の既定値への固定) |
+| 4.4 | 同 `::test_the_fired_direction_stays_an_eight_way_vector2i_while_upgraded` | テスト緑(型の宣言の側は C4 を参照) |
+| 4.5 | 同 `::test_the_upgraded_shot_emits_fired_then_spread_fired_once` | テスト緑 |
+| 4.6 | 同 `::test_the_spread_fired_directions_match_the_spawned_projectiles_in_order` | テスト緑 + 変異 M12 死亡 |
+| 4.7 | 同 `::test_the_upgraded_shot_emits_fired_then_spread_fired_once`(順序) | テスト緑 + **変異 M11 死亡**(発火順の入れ替え) |
+| 4.8 | 同 `::test_the_plain_primary_spawns_one_projectile_...` + `::..._emits_fired_without_spread_fired` | テスト緑 + **変異 M9 死亡**(常に拡散側へ倒すと 22 failures) |
+| 4.9 | 同 `::test_the_firing_frames_do_not_change_with_the_upgrade` | テスト緑 |
+| 4.10 | 同 `::test_the_secondary_weapon_does_not_emit_spread_fired` | テスト緑 |
+| 4.11 | 同 `::test_the_upgraded_shot_without_a_projectile_scene_reports_and_emits_nothing` | テスト緑 |
+| 4.12 | 同上(`events` が空・子が増えない) | テスト緑 |
+| 4.13 | 同 `::..._added_to_the_parent_of_the_player` + `::..._added_to_the_player_when_it_has_no_parent` | テスト緑 |
+| 4.14 | 同 `::test_the_spread_projectiles_keep_the_collision_layers_of_the_projectile` | テスト緑 |
+| 5.1 | `player_secondary_tint_test::test_the_secondary_firing_frames_do_not_change_with_the_upgrade` | テスト緑 |
+| 5.2 | 同 `::test_the_upgraded_secondary_spawns_one_projectile_and_emits_fired_once` | テスト緑 |
+| 5.3 | 同 `::test_the_upgraded_secondary_projectile_carries_the_tint`(既定と別の値 + 番人) | テスト緑 |
+| 5.4 | 同 `::test_the_plain_secondary_projectile_stays_white` | テスト緑 + **変異 M14 死亡**(常に色を掛ける) |
+| 5.5 | 同 `::test_the_default_tint_differs_from_white` | テスト緑 |
+| 5.6 | 同 `::test_the_tinted_secondary_projectile_renders_in_another_color`(`.tscn` から解決) | テスト緑 |
+| 5.7 | 同 `::test_the_primary_projectiles_stay_white_with_and_without_the_upgrade` | **変異 M13 生存 = 等価変異**(強化中の主武器は `_spawn_projectile()` を通らず差が到達不能。実測で確認) |
+| 5.8 | 同 `::test_the_secondary_numbers_do_not_change_with_the_upgrade`(4 項目を差し替え) | テスト緑 + **変異 M15 死亡**(`secondary_damage` の既定値への固定) |
+| 5.9 | 同 `::test_the_tint_is_an_export_of_the_player_and_not_of_the_stats` | テスト緑 |
+| 5.10 | 同上 + `player_spread_test::test_every_spawned_projectile_belongs_to_the_primary_or_the_secondary_weapon` | テスト緑 |
+| 5.11 | 同 `::test_the_tint_default_is_the_same_from_the_script_and_from_the_scene` + `player.tscn` の sha256 | テスト緑 + `git diff` 空 |
+| 6.1 | `player_upgrade_test::test_reaching_zero_health_clears_the_upgrade`(`max_health` を差し替え) | テスト緑 |
+| 6.2 | 同 `::test_the_upgrade_is_already_cleared_when_died_is_received`(受け手の中で観測) | テスト緑 + **変異 M16 死亡**(`died.emit()` を先に置く) |
+| 6.3 | `player_spread_test::test_the_primary_returns_to_one_projectile_after_the_health_reaches_zero` | テスト緑 |
+| 6.4 | `player_upgrade_test::test_reaching_zero_health_clears_the_upgrade_outside_the_tree` | テスト緑 |
+| 6.5 | 同 `::test_damage_that_leaves_health_keeps_the_upgrade` | テスト緑 + **変異 M17 死亡**(無条件に強化を落とす) |
+| 7.1 | `analysis_fragment_test::test_the_fragment_is_an_area` | テスト緑 |
+| 7.2 | `analysis_fragment_scene_test::test_the_scene_masks_the_player_layer_only` | テスト緑 + **変異 M20 死亡**(`collision_mask` を 2 → 6) |
+| 7.3 | 同 `::test_the_scene_puts_the_fragment_on_no_collision_layer` | テスト緑 |
+| 7.4 | `analysis_fragment_test::test_a_body_with_grant_upgrade_takes_the_fragment_and_releases_it` | テスト緑 |
+| 7.5 | 同上(接触後に `is_instance_valid()` が偽) | テスト緑 |
+| 7.6 | 同 `::test_a_body_without_grant_upgrade_leaves_the_fragment_in_place` ほか | テスト緑 + **変異 M18 死亡**(ガードを外して常に解放) |
+| 7.7 | 同 `::test_a_body_that_already_holds_the_upgrade_takes_another_fragment` | テスト緑 |
+| 7.8 | 同 `::test_the_fragment_stays_where_it_was_left_while_the_frames_pass`(実フレーム) | テスト緑 |
+| 7.9 | 同上(毎フレームの位置を観測) | テスト緑 |
+| 7.10 | 同 `::test_the_fragment_outlives_the_contact_callback_and_is_gone_one_frame_later` | テスト緑 + **変異 M21 死亡**(`queue_free()` → `free()` で 7 failures + 7 errors) |
+| 7.11 | 同 `::test_the_fragment_source_does_not_name_the_player` + `Player` を継承しないスタブでの 7.4 | テスト緑 |
+| 7.12 | `analysis_fragment_scene_test::test_the_placeholder_measures_eight_by_eight_pixels` ほか 3 本 | テスト緑 |
+| 7.13 | 同 `::test_the_collision_shape_*`(`position == Vector2.ZERO`) | テスト緑 |
+| 7.14 | 同 `::test_the_placeholder_color_is_absent_from_the_existing_placeholder_colors`(9 シーンを `load()`) | テスト緑 + 実行時の画面の色の実測 |
+| 7.15 | `player_secondary_tint_test::test_the_fragment_color_differs_from_the_tinted_secondary_projectile` | テスト緑 + 実行時の画面の色の実測(紫 vs 緑) |
+| 7.16 | `analysis_fragment_test::test_taking_the_fragment_leaves_the_pause_untouched` ほか | テスト緑 |
+| 7.17 | 同 `::test_the_fragment_holds_no_script_variable` | テスト緑 |
+| 7.18 | 同 `::test_an_area_that_offers_grant_upgrade_does_not_take_the_fragment` | テスト緑 + **変異 M19 死亡**(`body_entered` → `area_entered` で 14 failures) |
+| 8.1 | `analysis_dev_stage_test::test_the_defeat_of_a_transferable_kind_adds_one_fragment_to_the_stage` | テスト緑 + 実行時に断片の出現を実測 |
+| 8.2 | 同 `::test_the_fragment_appears_at_the_global_position_of_the_defeated_enemy` | テスト緑 + **変異 M24 死亡**(`global_position` → `position` で 3 failures) |
+| 8.3 | 同 `::test_the_fragment_outlives_the_defeated_enemy` | テスト緑 |
+| 8.4 | 同 `::test_the_defeat_of_a_non_transferable_kind_adds_no_fragment` | テスト緑 + 実行時に突進型で断片 0 個を実測 |
+| 8.5 | 同 `::test_the_stage_source_delegates_the_transferable_judgement` | **変異 M22 死亡。ただし落ちたのは静的検査 1 本のみ**(振る舞いの 2 ケースは緑。[Nit] 参照) |
+| 8.6 | 凍結 `ability_analysis_test::test_the_shooter_kind_is_transferable` | テスト緑 + `git diff` 空 |
+| 8.7 | 同 `::test_the_charger_kind_is_not_transferable` | テスト緑 + `git diff` 空 |
+| 8.8 | 同 `::test_a_value_below/above_the_kinds_pushes_an_error` ほか | テスト緑 + `git diff` 空 |
+| 8.9 | `analysis_dev_stage_test::test_a_transferable_defeat_without_a_fragment_scene_pushes_an_error` | テスト緑 |
+| 8.10 | 同 `::test_a_non_transferable_defeat_without_a_fragment_scene_pushes_no_error` | テスト緑 + **変異 M23 死亡**(ガードの順序の入れ替え) |
+| 8.11 | `analysis_dev_stage_scene_test::test_the_stage_root_declares_exactly_one_packed_scene_export` | テスト緑 |
+| 8.12 | 同 `::test_the_declared_fragment_scene_instantiates_an_analysis_fragment` | テスト緑 + **変異 M26 死亡**(参照を `player.tscn` へ差し替え。規律 8 が効いた) |
+| 8.13 | 同 `::test_every_enemy_defeat_is_wired_to_the_stage_and_binds_its_own_path` | テスト緑 |
+| 8.14 | 同上(`get_bound_arguments()` の解決先が当の敵自身) | テスト緑 |
+| 8.15 | `analysis_dev_stage_test::test_a_transferable_defeat_calls_nothing_on_the_player` + 静的検査 | テスト緑 + **変異 M28 死亡**(振る舞い・静的の両方が落ちた) |
+| 9.1 | `analysis_dev_stage_scene_test::test_the_project_holds_exactly_one_analysis_dev_stage_scene` | テスト緑 |
+| 9.2 | 同 `::test_the_stage_places_terrain_and_the_three_actors` ほか | テスト緑 + 実行時の初期配置の実測 |
+| 9.3 | 同 `::test_at_most_two_enemies_stand_inside_the_threat_ring` | **変異 M27 死亡**(3 体目の追加で 9.3 のケース自体も落ちた。下の訂正を参照) |
+| 9.4 | 同 `::test_the_far_enemy_starts_outside_its_own_detect_range` | テスト緑 |
+| 9.5 | 同 `::test_every_actor_fits_inside_the_floor_horizontally` | テスト緑 + 実行時の画面の実測 |
+| 9.6 | 同 `::test_every_actor_stands_on_top_of_the_floor` | テスト緑 + 実行時の画面の実測 |
+| 9.7 | 同 `::test_the_stage_fits_the_base_resolution_in_width` + `::test_the_stage_holds_no_camera` | テスト緑 + 実行時に全体が 320×180 に収まることを実測 |
+| 9.8 | 同 `::test_every_enemy_targets_the_player_by_the_scene_declaration` | テスト緑 |
+| 9.9 | 同 `::test_the_player_death_is_wired_to_the_stage_by_the_scene_declaration` | テスト緑 |
+| 9.10 | `analysis_dev_stage_test::test_the_handler_runs_no_reload_inside_its_own_call` | テスト緑 + **変異 M29 死亡**(同期呼び出しへ) |
+| 9.11 | `analysis_dev_stage_scene_test::test_no_enemy_appears_while_the_stage_runs` ほか | テスト緑 |
+| 9.12 | `git diff 01c1d0e -- src/stage/dev_stage.* enemy_dev_stage.*` が空 | `git diff` |
+| 9.13 | `git diff 01c1d0e -- project.godot` が空(`run/main_scene` 不変) | `git diff` |
+| 9.14 | `--diff-filter=D` に `analysis_overwrite_dev_stage.tscn` と対のテスト | `git diff` |
+| 9.15 | `docs/testing.md` から 2 つ目の仮ステージの段落と起動コマンドが消え、語の検索が 0 件 | `git diff` + grep |
+| 9.16 | `docs/testing.md:75-88` の 7 つの箇条書きが 12.1〜12.7 と同順で 1 対 1 | 文書の読解 |
+| 9.17 | 差分がハンク 1 つ(`@@ -72,19 +72,23 @@`)で当該の節の内側に収まる | `git diff` + 見出しの行番号 |
+| 9.18 | 9 スイート / 135 ケースが配置・命名・引数なしの 4 条を満たす | ファイル一覧 + `skipped 0` |
+| 9.19 | `残り回数`・`空枠`・`演出`・`第 3`・`ability_uses`・`飛翔`・`上書き` が 0 件 | grep |
+| 10.1 | `--diff-filter=D` に `ability_slot.gd`(+`.uid`)と対のテスト | `git diff` |
+| 10.2 | 同フィルタに `analysis_pulse.gd`・`.tscn` と対のテスト 2 本 | `git diff` |
+| 10.3 | `player.gd` 全文と `src/` の 9 語の検索が 0 件 | ソース読解 + grep |
+| 10.4 | `player_stats.gd` の差分が 4 行の削除のみ | `git diff` の逐行確認 |
+| 10.5 | `grep -c '^@export' src/player/player_stats.gd` = 14 + 凍結スイート緑 | **変異 M25 生存 → C2(欠陥)** |
+| 10.6 | `src/` の `.gd`/`.tscn`/`.tres` に 9 語が 0 件(陽性対照つき) | grep(**自動の検査は不在。C2 を参照**) |
+| 10.7 | `--diff-filter=D` の tests 側が要件 10.7 の列挙 7 本ちょうど(過不足 0) | `git diff` と spec.md の 1 対 1 照合 |
+| 10.8 | `player.gd` の武器フィールド 2・シグナル 3 + 振る舞い側 2 ケース | ソース読解 + テスト緑 |
+| 10.9 | `git diff 01c1d0e -- ability_analysis.gd ability_analysis_test.gd` が空 | `git diff` + テスト緑 |
+| 10.10 | `make test` の統計行 553 / 35 / 全 0 / exit 0 | 実行 |
+| 11.1 | `git diff 01c1d0e -- player_command.gd` が空 | `git diff` |
+| 11.2 | 同 `-- project.godot` が空 + `[input]` 節の sha256 のケース | `git diff` + テスト緑 |
+| 11.3 | 宣言行が `01c1d0e` と文字列として完全一致 | `git show` の比較(**退行を捕らえるテストが無い → C4**) |
+| 11.4 | 同 `-- primary_weapon.gd secondary_weapon.gd aim_resolver.gd health.gd` が空 | `git diff` |
+| 11.5 | 同 `-- enemy_projectile.gd` が空 | `git diff` |
+| 11.6 | 同 `-- src/enemy/` が空 | `git diff` |
+| 11.7 | 同 `-- project.godot` が空(`[layer_names]` 1〜5 不変) | `git diff` |
+| 11.8 | 同 `-- 001〜004 の 4 ディレクトリ` が空 | `git diff` |
+| 11.9 | `--diff-filter=MDR -- tests/` に unit #1〜#3 の既存テストが 1 本も現れない | `git diff --diff-filter=MDR` |
+| 11.10 | `projectile_test.gd` が MDR に現れず 19 ケース緑 | `git diff` + テスト緑 |
+| 11.11 | `player_stats_test.gd` が MDR に現れず 12 ケース緑 | `git diff` + テスト緑 |
+| 11.12 | 同スイートが 14 項目の既定値を 1 つずつ検査して緑 | `git diff` + テスト緑 |
+| 12.1 | 撃破前の射撃型 `(160.0, 84.0)` と断片の `global_position` が**差 (0,0)**、親は `AnalysisDevStage` | **実行時の実測**(runtime-smoke が独立に観察) |
+| 12.2 | 突進型の撃破の前後を毎フレーム監視し断片は最大 0 個、撃破 2 秒後も 0 個 | **実行時の実測** |
+| 12.3 | 接触で `fragments=1→0`・`is_primary_upgraded=false→true`、以後 3 発。**8 方向すべてで中央 ±20.00 度** | **実行時の実測** |
+| 12.4 | 強化前の描画ピクセル `(1.0,0.851,0.349)` → 強化後 `(0.349,0.749,0.349)` | **実行時の実測**(画面のピクセル) |
+| 12.5 | 12.0 秒放置して `fragments=1`、位置のずれ `(0,0)` | **実行時の実測** |
+| 12.6 | hp 0 → 再読込 → プレイヤー `(48,76)`・敵 2 体・断片 0 個で復帰、主武器は **1 発** | **実行時の実測** |
+| 12.7 | 通し **1.28 秒**、同区間 224 フレームで**最大フレーム間隔 16.7ms・40ms 超が 0 件** | **実行時の実測** |
+
+#### 変異検査の実測(30 件 / 死亡 25・生存 5)
+
+- **死亡 25 件**: 上の表の「変異 M… 死亡」の行(M1〜M4・M6・M8〜M12・M14〜M24・M26〜M29)。要件 1〜11 の 11 グループすべてで 1 件以上が死亡した。
+- **生存 5 件**: M5(2.6)・M7(3.9)・M13(5.7)・M25(10.5/10.6/10.4)・M27 相当の宣言型(11.3)。
+  - **等価変異 1 件**: M13(5.7)。強化中の主武器は `_spawn_spread()` を通り `_spawn_projectile()` へ来ないため、`is_secondary and` の有無の差が現在の呼び出し経路では到達不能。本ファイル「タスク 5.3 の学習」の申告どおりであることが実測で確認された。
+  - **等価でない生存 4 件**: C1〜C4。いずれも実測または有限性の議論で「落とせる」ことが示された。
+- **要件 12 は変異注入の対象外**(spec.md §7 が自動テストで検証しないと定めており、変異を掛ける相手のテストが存在しない)。
+- 手順の規律: 30 件すべて `cp` での退避 → 書き換え → 実行 → `cp` での復元 → sha256 での復元の確認、を守った(復元は 30 回すべて基線値に一致)。復元後の `make test` は 553 / 35 / 全 0 / exit 0 を再現し、複製と元の作業ツリーの `diff -r` は差分 0 であった。
+
+#### 本ファイルの既存の記録に対する訂正(パネルの実測が上書きするもの)
+
+1. **「タスク 4.2 の学習」1 件目** — `direction == Vector2.ZERO` の選択を「等価変異」としたのは誤り。極小の非ゼロ向き 1 ケースで落とせる(C3)。
+2. **「タスク 3.3 の学習 > 欠陥 1」** — 「要件 11.9 が凍結しているため塞げない」は**既存スイートの改訂に限れば**正しいが、新設スイートでの排他的な検査は 11.9 に触れずに置ける(C2)。
+3. **「タスク 5.1 の学習 > 欠陥 1」** — 「要点が指示した走査の範囲内であり要件違反ではない」は、検出力の欠落を正当化しない。3.8 が使う「ちょうどの個数」の形が 3.9 にも適用できる(C1)。
+4. **「タスク 2.3 の学習 > 等価変異域」** — 9.3 について「9.2 の体数アサーションが殺しており閾値のロジックが殺したのではない」は実測と食い違う。3 体目を足す変異では **9.3 のケース自体も落ちた**。含意関係の結論(9.2 を破らずに 9.3 だけを落とせない)は正しい。
+5. **「凍結の正本」の表の 11.3 の行** — 「宣言行の完全一致 + 4.4・5.2 の振る舞いのテスト」の後半は**宣言の型を観測できない**(実測)。この行の凍結は 1 回きりの手作業の照合だけに依存している(C4)。
+
+### 凍結文書との乖離(最終検証パネルが返した DRIFT)
+
+中間生成物の本文は書き換えず、判定・根拠・置き場の候補だけを転記する(dev-implement 14.2)。
+
+1. **unit #2 `spec.md` §5.6 の `launch(direction: Vector2i, ...)` と実装の `Vector2`。** **実装が正しい**(本単位の spec.md §5.2・§8 が型の拡張を人間の確定済みの決定として明記し、要件 2.1 が課している)。置き場: 既に (1) `tests/weapon/projectile_direction_test.gd`、(2) `projectile.gd` の doc コメント、(3) コミット `e88713f` の本文へ反映済み。追加の対処は不要。
+2. **`ZERO_DIRECTION_ERROR` の文言が `Vector2i.ZERO` を指したまま、検査は `Vector2.ZERO`。** **実装が正しく文言だけが古い**(要件 2.7 が据え置きを課している)。置き場: `projectile.gd` の doc コメントに理由と訂正の時期が記載済み。**申し送り**: 同じ文言の複製は非凍結の `tests/weapon/projectile_direction_test.gd` にもあり、訂正する単位は 2 本を同時に直す必要がある。
+3. **本ファイル「変更してよい既存ファイル」の定義に `docs/specs/001-mvp/roadmap.md`・`state.json` が入っていない。** **定義のほうが不完全**(両者は SDD の台帳であり unit の作成そのもの = コミット `f1bfca1` が必ず触る。実装タスクは 1 件も触れていない)。置き場: 後続 unit の tasks.md、または `.claude/skills/flow-sdd` 側で「SDD の台帳は境界の定義から除く」ことを明示する。
+4. **spec.md §5.6 と要件 8.1・8.3 の検証の形が、実機で必ず物理コールバックの最中に走る `add_child()` を同期に要求している(C5)。** **実行時の観察が正しい**。根拠: (a) ERROR が 8/8 回で決定的に再現、(b) 追加を遅延させる変異で ERROR が消える、(c) **同じファイルの `_on_player_died()` が同一の危険(物理コールバック中の `CollisionObject2D` の操作)を理由に既に `call_deferred` を採っており、プロジェクト自身の規律と矛盾している**。
+   - **なお spec.md §5.6 は「いつ」追加するかを定めておらず、主眼は「敵の子にしない(ステージの子にする)」ことである**。`add_child.call_deferred(fragment)` でもステージの子であることは保たれる。したがって**契約そのものより、要件 8.1・8.3 を検証するテストの形(ハンドラを同期に呼んで即座に子を数える)のほうが強く縛っている**可能性がある。この読みの当否は人間の判断に委ねる。
+   - 置き場の候補: (1) spec.md §5.6 に追加の時期を定める一文と要件 8.1・8.3 の検証の形の追記(契約の正本)、(2) `analysis_dev_stage.gd` の `_on_enemy_defeated()` の doc コメント(Why not の正本。`_on_player_died()` に同型の記述が既にある)、(3) `tests/stage/analysis_dev_stage_test.gd` を「遅延の後に子が 1 つ増える」形へ改める(What の正本)。
+
+### 最終検証パネルの `[Nit]`(対応を見送ったもの)
+
+いずれも本単位の受け入れ基準に反しないため、パネルの判定には数えていない。
+
+- **8.5 の検出力が静的検査に片寄っている**(test)。`AbilityAnalysis.is_transferable(kind)` を `kind != 1` の直値比較へ置き換える変異で落ちたのは、ソースの文字列を見る 1 ケースだけだった。現状の 2 種別では実害は無いが、種別が増えたときに文字列検査だけが番人になる。
+- **`PICKUP_SYMBOLS` の `"grant_ability"` が死んだ検査になっている**(structure)。撤去済みの識別子であり、以後どの変異も落とさない。同配列の `"Player"` は字面を禁じるため、ステージの doc コメントで `Player` に言及できない副作用を持つ。
+- **`_spawn_spread()` のループ内の早期 return** が「1〜2 発だけ生成してシグナルを出さない」状態を許すように読める(structure)。実際には失敗要因が `projectile_scene == null` だけで 1 回の呼び出しの中で不変のため 0 発か 3 発にしかならない。unit #4 と同形で本単位が持ち込んだ後退ではない。
+- **`SpreadResolver.EIGHT_DIRECTIONS` が非公開で足りる**(structure)。参照は同ファイルの事前条件のガードだけで、テストは意図的に自前の複製を持つ。前身の `CLOCKWISE_RING` も公開だったため後退ではない。
+- **中間生成物の ID が `tests/` の 5 箇所のコメントに残る**(structure)。基線 `01c1d0e` の凍結済みファイルに同形が 16 件あり、**既存の慣行の継続**であって本単位が持ち込んだ後退ではない。**`src/` については本単位の追加分がゼロ**。
+- **`projectile_direction_test.gd:194` の `PlayerStats.new()` が `auto_free()` を通っていない**(structure)。`Resource` は参照カウントで解放されるため `orphans` は 0 のままだが、本単位の他の 5 スイートは一貫して `auto_free()` としており体裁が揃っていない。
+- **`check.py` の warning 3 件はいずれも分割不要**(structure の意味判断)。`tasks.md` は完了と同時に凍結され以後変更されない。`player_spread_test.gd` は全ケースが要件 4 という 1 つの関心に属し、生成ヘルパを全群が共有する。`analysis_dev_stage_scene_test.gd` は継ぎ目が弱いながら実在するが、分割の費用(走査ヘルパの複製、または 1 つの `.tscn` に 3 本目のスイート)が利得を上回る。
+- **断片の 8×8 は敵の 16×16 の 1/4 の面積で、320×180 の等倍では小さい**(runtime-smoke)。spec.md §5.4 のとおりであり情報提供に留まる。
+- **gdUnit4 の取得がアーカイブの sha256 を固定していない / CI に `permissions:` の明示が無い / action がタグ参照**(security)。いずれも既存事項であり、**本単位は `scripts/`・`.github/`・`.claude/`・`project.godot`・`addons/` を 1 行も変更していない**。別の作業単位として起票する価値はある。
+
