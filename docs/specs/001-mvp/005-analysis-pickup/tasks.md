@@ -260,7 +260,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 削除の後に `make test` の統計行の `orphans`・`skipped`・`failures`・`errors` がすべて 0 であることを確かめる
     - 検証コマンド: `make test`
 
-  - [ ] 3.5 撤去の完了を識別子と統計行で検査する
+  - [x] 3.5 撤去の完了を識別子と統計行で検査する
     _Requirements: 10.6, 10.7, 10.8, 10.9, 10.10_
     _Boundary: Player_
     _Depends: 3.3, 3.4_
@@ -549,6 +549,23 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **削除タスクの検算式は 3.1〜3.4 の 4 回連続で成立した。** 削除の巻き添えと消し漏れの両方向のずれをこの式が捕らえる。
 - 削除の後、`tests/ability/analysis_fragment_scene_test.gd`(`analysis_dev_stage.tscn` を `load()` する)と `tests/stage/analysis_dev_stage_scene_test.gd` が緑であることを確認した。2.2 の `ext_resource` 差し替えが済んだ後に削除するという順序制約は守られている。
 
+### タスク 3.5 の撤去の検査(実測)
+
+| 要件 | 検査 | 結果 |
+| ---- | ---- | ---- |
+| 10.6 | `src/` の `.gd`/`.tscn`/`.tres` 41 ファイル(`.gd` 28 / `.tscn` 11 / `.tres` 2)に対し 9 語(`AbilitySlot`・`AnalysisPulse`・`ability_slot`・`ability_uses`・`ability_cooldown`・`ability_damage`・`ability_bullet_speed`・`ability_fired`・`grant_ability`)を検索 | 0 件。**偽陰性の排除**として同じ glob で残すべき語(`AbilityAnalysis`・`ability_analysis`)の陽性対照を取り 3 件ヒットすることを確認 |
+| 10.7 | spec.md が列挙する 7 本のテストの不在(`tests/player/player_spread_test.gd` は列挙に含まれない) | 7 本すべて不在。`.uid` の取り残しも無し(`git ls-files` で二重確認) |
+| 10.8 | **静的な側のみ**。`Player` の宣言と `player.tscn` に枠を表す項目・シグナルが無いこと | スクリプト変数 7・シグナル 2(`died`・`fired`)。武器のフィールドは `_primary_weapon`・`_secondary_weapon` の 2 つちょうど |
+| 10.9 | `git diff 01c1d0e -- src/ability/ability_analysis.gd tests/ability/ability_analysis_test.gd` | 0 バイト(空)。両ファイルは現存し非零サイズであり「両方消えていて差分が空」ではないことも確認 |
+| 10.10 | `make test` の統計行 | **486 cases / 31 suites / errors 0 / failures 0 / flaky 0 / skipped 0 / orphans 0 / exit 0**。見込みの 31 suites と一致(基線 37 + 各サブタスクの増減の総和) |
+
+#### 10.8 を静的側だけに留めた記録(規律 3 に対する意図的な部分検査)
+
+- **振る舞い側は本サブタスクでは扱わない。** 「第 3 の枠を表す状態を持たない」ことの振る舞いは、要件 4.8(強化していない間の主武器は 1 発)・5.1/5.10(副武器が常に素通し)が担い、**タスク 5.2・5.3 が固定する**。
+- **手段を実行時実測からソース読解へ替えた。** `get_property_list()`/`get_signal_list()` を実測するには `class_name Player` を解決するスクリプトを `res://` 配下(= リポジトリの中)に置く必要があり、「検査タスクはファイルを変更しない」制約と両立しないためである。レビューが独立に確認したところ、`src/player/player.gd` には動的プロパティ(`_get_property_list()`/`_set`/`_get`)・`add_user_signal()`・スクリプトの継承(`extends CharacterBody2D` = エンジン型直下)のいずれも無く、**この場合に限り静的読解は実行時実測と同じ被覆を持つ**。
+- **静的側だけで残る穴(5.2・5.3 への申し送り)**: (a) `set("<名前>", ...)`・`set_meta()` による動的な状態の付与は宣言を読む形では原理的に捕らえられない。(b) 枠が `Player` の外(ステージ・HUD・オートロード等)に置かれる形は見ていない。(c) 既存フィールドの再利用で枠を表す形(武器を配列で持ち 3 要素目を使う等)は、実行時に発射経路が 2 系統ちょうどであることを観測していない。**5.2・5.3 の振る舞いケースでは「主武器・副武器の 2 系統以外の発射が起きないこと」を実際に駆動して観測する**(`fired` の `is_secondary` が true/false の両側のみを取る形が規律 2 とも噛み合う)。
+- レビューの `[FYI]`: 10.8 の振る舞い側は現時点で `tests/player/player_spread_test.gd` が不在のため未検証区間にある。ただし変更しない `tests/player/player_weapon_test.gd`(unit #2 由来)が主武器・副武器の発射挙動を押さえており、完全に無防備ではない。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -563,4 +580,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 3.2 の後 | 525 | 34 |
 | 3.3 の後 | 516 | 33 |
 | 3.4 の後 | 486 | 31 |
+| 3.5 の後 | 486 | 31 |(検査のみ。変更なし)
 
