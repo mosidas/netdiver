@@ -437,7 +437,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
 - [ ] 7. 凍結済みの契約の非変更の横断検査
 
-  - [ ] 7.1 凍結対象が変わっていないことを git の差分で検査する
+  - [x] 7.1 凍結対象が変わっていないことを git の差分で検査する
     _Requirements: 9.12, 9.13, 9.18, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9_
     _Boundary: repository_
     _Depends: 6.2_
@@ -697,6 +697,73 @@ spec.md §8 が定める反映先 3 つの確認結果:
   - **自動テストでは捕らえられない**: `tests/stage/analysis_dev_stage_test.gd` は `_on_enemy_defeated()` を直接呼ぶため、物理コールバックの最中という条件が再現しない。
   - **直していない理由**: 解消するには `add_child()` を `add_child.call_deferred()` にするほかないが、それは spec.md §5.6(「ステージ自身の子として**追加してから** `global_position` へ置く」)と要件 8.1・8.3 の同期的な検証を変えることになる。**承認済みの契約の変更に当たるため、自分で直さず記録と報告に留める**(規律 10・`dev-implement` 13.)。
 
+### タスク 7.1 の凍結の検査(実測)
+
+差分の基点は `01c1d0e`(本単位の作業ブランチの分岐元)。**本タスクは `project.godot`・`src/`・`tests/` を 1 バイトも変更していない**(検査のみ。実行後に `git status --porcelain` が空であることを確認した)。
+
+**偽陰性の排除の方針**: 空の差分は「変わっていない」とも「対象パスの綴りを間違えて 0 件になった」とも読める。そこで各行で **対象パスが `01c1d0e` にも現在にも追跡対象として実在すること**を `git ls-files` と `git ls-tree -r --name-only 01c1d0e` の件数の一致で示した。あわせて 2 つの対照を取った。
+
+- **陽性対照**(同じ手段が実在の変更を検出すること): `src/player/player.gd` 10419 バイト / `docs/testing.md` 3193 バイト / `src/weapon/projectile.gd` 3034 バイト / `src/stage/analysis_dev_stage.tscn` 1115 バイトの差分を検出した。
+- **陰性対照**(綴りを崩すと実在の確認が落ちること): `project.godott`・`src/player/helth.gd`・`src/enemyy`・`docs/specs/001-mvp/004-analysis-abilty` はいずれも `changed=0` かつ `tracked=0` になり、`tracked>0` の行とは区別できた。
+
+#### 「凍結の正本」の表との 1 対 1 の対応
+
+| # | 凍結の対象(表の行) | 要件 | 手段 | 実測 |
+| - | ---- | ---- | ---- | ---- |
+| 1 | `project.godot` | 11.2・11.7・9.13 | `git diff 01c1d0e -- project.godot` | 0 ファイル / 0 バイト。tracked 1(基点も 1)。全体の sha256 が基点と同一(`9e19d198058639d1fd29491f7d41d9d4cd85cdab24093e73ff4ba446e04c2d7d`) |
+| 2 | `player_command.gd`・`player_input.gd`・`aim_resolver.gd`・`health.gd` | 11.1・11.4 | 同上(`.gd` と `.gd.uid` の 8 パス) | 0 ファイル / 0 バイト。tracked 8(基点も 8) |
+| 3 | `primary_weapon.gd`・`secondary_weapon.gd`・`enemy_projectile.gd`・`projectile.tscn` | 11.4・11.5 | 同上(`.uid` を含む 7 パス) | 0 ファイル / 0 バイト。tracked 7(基点も 7) |
+| 4 | `src/enemy/` の全ファイル | 11.6 | 同上(ディレクトリ指定) | 0 ファイル / 0 バイト。tracked 25(基点も 25) |
+| 5 | `dev_stage.*`・`enemy_dev_stage.*`・`damage_zone.*` | 9.12 | 同上(9 パス) | 0 ファイル / 0 バイト。tracked 9(基点も 9) |
+| 6 | `src/player/player.tscn` | 5.11 | 同上 | 0 ファイル / 0 バイト。tracked 1。sha256 はタスク 5.3 の記録と一致 |
+| 7 | `src/ability/ability_analysis.gd` | 10.9 | 同上(`.uid` を含む 2 パス) | 0 ファイル / 0 バイト。tracked 2 |
+| 8 | unit #1〜#4 の `spec.md` と `tasks.md` | 11.8 | 同上(4 ディレクトリ) | 0 ファイル / 0 バイト。tracked 13。**4 ディレクトリを個別にも数え**、3 / 3 / 3 / 4 と分布することを確かめた(1 つだけ綴りを誤っても総数では気づけないため) |
+| 9 | unit #1〜#3 の既存テスト 24 本 + `ability_analysis_test.gd` | 11.9・10.9 | `git diff --diff-filter=MDR 01c1d0e -- <25 パス>` | 0 ファイル / 0 バイト。25 本すべてが基点にも現在にも実在。対の `.gd.uid` 25 本も 0。フィルタ無し(`A` も含む)でも 0 |
+| 10 | `fired` のシグナル宣言行 | 11.3 | 宣言行の完全一致 | **一致**(53 バイト / sha256 `c6c6303ed00ffece09ac81945b7426da8d44915983a20b6ddeb11e2f81fc2d92` が基点と同一)。`^signal fired` の宣言は基点・現在とも 1 本 |
+| 11 | `PlayerStats` の既存 14 項目の既定値 | 11.12 | `player_stats_test.gd` が変更なしで緑 | 変更 0(#9 に含む)。12 ケース / failures 0 / errors 0 / skipped 0 |
+| 12 | `Projectile` の文言・引数・レイヤ・射程・解放 | 2.7・2.8・2.9・11.10 | `projectile_test.gd` が変更なしで緑 | 変更 0(#9 に含む)。19 ケース / failures 0 / errors 0 / skipped 0。`projectile.tscn` の差分も 0(#3) |
+
+**#9 の対象から除いたもの**: 要件 10.7 が削除を命じた unit #4 の 7 本(`ability_slot_test.gd`・`analysis_pulse_test.gd`・`analysis_pulse_scene_test.gd`・`player_ability_test.gd`・`player_ability_stats_test.gd`・`player_takeover_test.gd`・`analysis_overwrite_dev_stage_test.gd`)は列挙に含めていない(いずれも現在 `git ls-files` で 0 件 = 削除済み)。`tests/weapon/` へ本単位が足した `projectile_direction_test.gd` は `A` であり `--diff-filter=MDR` に現れない。**#9 の陽性対照**として、同じ配列に変更済みの `tests/player/player_spread_test.gd` を 1 本混ぜると `MDR` が 1 件を返すことを確かめた(検出力のあるコマンドで 0 件だったこと)。
+
+- 表に無いが unit #2 由来の `tests/stage/damage_zone_test.gd` も併せて見た(`MDR` 0 件 / tracked 1)。要件 11.9 の列挙には含まれないため、上の 1 対 1 の対応には数えていない。
+- 11.2 の `[input]` は 7 アクション(`move_left`・`move_right`・`aim_up`・`aim_down`・`jump`・`fire_primary`・`fire_secondary`)、11.7 の `[layer_names]` は 1〜5 が `terrain`・`player`・`player_projectile`・`enemy`・`enemy_projectile`、9.13 の `run/main_scene` は `res://main.tscn` であることを実値でも確かめた(ファイル全体の sha256 一致に加えた冗長な確認)。
+
+#### 9.18(配置と命名)
+
+対象は**本単位が足した・作り直したテスト**である。名前を書き写さず `git diff --diff-filter=AM --name-only 01c1d0e -- 'tests/*_test.gd'` から導出した **9 スイート / 135 ケース**(`analysis_fragment_test`・`analysis_fragment_scene_test`・`spread_resolver_test`・`player_upgrade_test`・`player_spread_test`・`player_secondary_tint_test`・`analysis_dev_stage_test`・`analysis_dev_stage_scene_test`・`projectile_direction_test`)。`docs/testing.md`「配置と命名」の 3 条と、同「書き方」の「引数を取るテストケースを書かない」を照合した。
+
+| 検査 | 結果 |
+| ---- | ---- |
+| `tests/` 以下にのみ置く | 9 本すべて `tests/` 直下。`src/` 配下の `*_test.gd` は 0 件 |
+| 実装のディレクトリ構成を写したパス | 9 本すべて、対応する `src/<同名ディレクトリ>` が実在(`src/ability`・`src/player`・`src/stage`・`src/weapon`) |
+| ファイル名の接尾辞 `_test.gd` | 9 本すべて適合 |
+| テストケース名の接頭辞 `test_` | 135 ケースすべて `func test_` で始まる |
+| **引数を取るテストケースが 1 つも無い** | **0 件**。本単位の 9 本だけでなく `tests/` 全体を走査しても 0 件 |
+
+**引数の検査の偽陰性の排除**: 「0 件」が式の壊れによるものでないことを、`func test_bad(timeout := 100) -> void:` を含む合成ファイルを同じ式に掛けて確かめた(合成側は正しく検出された)。これが `make test` の `skipped` が 0 である根拠と対応する。
+
+リポジトリ全体のスイートの配置は `tests/ability` 4 / `tests/enemy` 7 / `tests/harness` 2 / `tests/player` 11 / `tests/stage` 5 / `tests/weapon` 6 の **計 35**。
+
+#### `make test` の統計行(全体)
+
+**553 test cases / 35 suites / errors 0 / failures 0 / flaky 0 / skipped 0 / orphans 0 / exit 0**(実行時間 52s 397ms)。`orphans`・`skipped`・`failures`・`errors` はすべて 0 である。
+
+- **見込みの 35 suites と一致した。** 基線 37 に対し、要件 10.7 の削除 7 本と本単位の新設 5 本(`analysis_fragment_test`・`analysis_fragment_scene_test`・`projectile_direction_test`・`player_upgrade_test`・`player_secondary_tint_test`)で 37 − 7 + 5 = 35。作り直した 4 本(`spread_resolver_test`・`player_spread_test`・`analysis_dev_stage_test`・`analysis_dev_stage_scene_test`)は同じパスへ戻るため増減しない。
+- ケース数は基線 594 に対し 553(−41)。タスク 5.3・6.1 の時点の記録と同じ値であり、6.2(目視のみ)と 7.1(検査のみ)がテストを変えていないことと整合する。
+
+#### 差分の照合の結論
+
+`git diff --stat 01c1d0e` に現れる 51 ファイルはすべて「凍結の正本」の表の外側、かつ **File Structure Plan と「変更してよい既存ファイル」の範囲内**である(`src/ability/`・`src/player/player.gd`・`player_stats.gd`・`src/stage/analysis_*`・`src/weapon/projectile.gd`・`tests/` の該当分・`docs/testing.md`・本単位の workdir・`docs/specs/001-mvp/roadmap.md` と `state.json`)。**計画に含まれない差分は 1 件も見つからなかったため、戻さずに報告する事象は無い。**
+
+- **レビューの `[Nit]` を反映した補足**: 末尾の `docs/specs/001-mvp/roadmap.md` と `docs/specs/001-mvp/state.json` の 2 つは、厳密には「変更してよい既存ファイル」の定義(本ファイルの表と本単位の workdir)のどちらにも当たらない。両者は SDD の台帳であり、`git log 01c1d0e..HEAD -- <2 ファイル>` が示すとおり本単位の作成時のコミット `f1bfca1` 1 件のみに由来する(実装タスクが触れたものではない)。凍結の正本の表にも要件 11.8(unit #1〜#4 に限定)にも現れないため、要件違反ではない。
+
+#### 検査そのものの学び(後続の検査タスクへ)
+
+- **`git diff` の空は「差分なし」と「パスが実在しない」を区別しない。** 対象パスの実在の件数を基点側と現在側の両方で数える手順を、空を結論づける前に必ず置く。
+- **シェルの語の分割で対象パスが 1 本に潰れる事故を実際に踏んだ。** `FROZEN="a b c"; set -- $FROZEN` は zsh では分割されず、25 本のつもりが 1 本(存在しないパス)になり `MDR` が 0 件を返した。**実在の確認を先に置いていたため「対象パス数: 1」で即座に気づけた**。検査スクリプトは対象パス数を先に出力し、期待する本数と突き合わせること。配列(`FROZEN=(...)`)で渡せば起きない。
+- **タスク 5.1 が記録した `[input]` 節の sha256 は、シェルの `awk | shasum` では再現しない。** テスト側の `_input_section()` は行を `"\n".join()` するため**末尾に改行が付かない**のに対し、`awk` の `print` は最終行にも改行を付ける。この 1 バイトで値が変わる。同じ抽出(ヘッダ `[input]` の行を含め、次の `[` の行の直前まで、末尾に改行を付けない)を Python で再現して `d2a56d5…` と一致することを確認した。**後続の unit がこの定数を更新するときは、テスト側の抽出と同じ形で計算すること**(ファイル全体の sha256 とは別物である)。
+- タスク 4.1 の `aim_resolver.gd`(`fdc1323f…`)とタスク 5.3 の `player.tscn`(`c1ff5528…`)の sha256 も現在の値と一致した。3 つの sha256 定数はいずれもテストの中で実行時に検査されており、上の 553 ケースの緑に含まれる(`spread_resolver_test.gd`・`player_upgrade_test.gd`・`player_secondary_tint_test.gd`)。**git の差分と実行時の検査が、同じ凍結を独立な 2 経路で押さえている。**
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -719,4 +786,5 @@ spec.md §8 が定める反映先 3 つの確認結果:
 | 5.2 の後 | 538 | 34 |
 | 5.3 の後 | 553 | 35 |
 | 6.1 の後 | 553 | 35 |(ドキュメントのみ。変更なし)
+| 7.1 の後 | 553 | 35 |(6.2 は目視のみ・7.1 は検査のみ。どちらもテストを変えていない。見込みの 35 suites と一致)
 
