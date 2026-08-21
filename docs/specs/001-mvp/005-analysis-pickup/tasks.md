@@ -248,7 +248,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `Player._report_non_positive_stats()` は `get_property_list()` から導いており、項目を減らすだけで検査の対象も減る。`player.gd` を変更しない
     - 検証コマンド: `make test`
 
-  - [ ] 3.4 (P) `AnalysisPulse` とそのシーンを削除する
+  - [x] 3.4 (P) `AnalysisPulse` とそのシーンを削除する
     _Requirements: 10.2_
     _Boundary: AnalysisPulse_
     _Depends: 2.2_
@@ -543,6 +543,12 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 1. **要件 10.5(「14 項目ちょうど」)は非排他な検査しか無い。** `tests/player/player_stats_test.gd` は `assert_array(...).contains(STAT_NAMES)` で「含むこと」だけを見るため、**`PlayerStats` に 15 項目目を足す変異は全体が緑のまま生存する**。要件 11.9 が同スイートを凍結しているため改訂で塞げない(塞ぐと要件違反になる)。タスク 3.5 の grep は `ability_*` の 4 語については補うが、**別名の 15 項目目は捕らえられない**。等価変異ではない、残る欠陥である。
 2. **削除で失われた検出力。** 消した `tests/player/player_ability_stats_test.gd` の `test_ready_checks_an_ability_stat_the_implementation_cannot_know_by_name` は、`PlayerStats` を継承して実装が名前で知りようのない項目を足し、`Player._report_non_positive_stats()` が `stats.get_property_list()` から検査対象を導いていることを固定する**リポジトリ内で唯一のケース**だった(`tests/player/player_move_test.gd` は 14 項目の固定リストしか見ていない)。削除後に生存する変異は「同関数を 14 項目の名前を固定で列挙して回すループへ書き換える」。要件 10.7 が削除を命じているため対処しない。**後続で `PlayerStats` に項目を足す・派生させる作業が入る場合、`Player` の検査が新項目を素通りする退行を誰も捕らえられない**ことを前提にすること。
 
+### タスク 3.4 の学習
+
+- `analysis_pulse.tscn` はヘッダに `uid=` を持たなかった(`[gd_scene load_steps=2 format=3]`)。**unit #4 期に生成されたシーンにはシーン uid が振られていない個体がある**ため、「ヘッダを見てから確認範囲を決める」手順が有効。
+- **削除タスクの検算式は 3.1〜3.4 の 4 回連続で成立した。** 削除の巻き添えと消し漏れの両方向のずれをこの式が捕らえる。
+- 削除の後、`tests/ability/analysis_fragment_scene_test.gd`(`analysis_dev_stage.tscn` を `load()` する)と `tests/stage/analysis_dev_stage_scene_test.gd` が緑であることを確認した。2.2 の `ext_resource` 差し替えが済んだ後に削除するという順序制約は守られている。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -556,4 +562,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 3.1 の後 | 554 | 35 |
 | 3.2 の後 | 525 | 34 |
 | 3.3 の後 | 516 | 33 |
+| 3.4 の後 | 486 | 31 |
 
