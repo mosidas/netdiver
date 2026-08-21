@@ -26,6 +26,12 @@ const MISSING_PROJECTILE_SCENE_ERROR: String = (
 ## 弾のシーン。値の出どころを 1 箇所にするため、参照はインスペクタから与える
 @export var projectile_scene: PackedScene
 
+## 強化中に生成する副武器の弾へ掛ける色。既定値をここだけに持ち `player.tscn` へ書かない:
+## シーンにも持たせると値の出どころが 2 つに分かれ、`Player.new()` から作った場合と
+## シーンから生成した場合とで見た目が変わりうる。`PlayerStats` にも置かない: 手触りを
+## 決める数値ではなく見え方である
+@export var upgraded_secondary_tint: Color = Color(0.35, 0.88, 1, 1)
+
 ## 体力。待機時間の計測と回復の進行は `Health` が持ち、`Player` は経過時間を自分で持たない
 var health: Health
 
@@ -152,9 +158,13 @@ func _ensure_weapons() -> void:
 
 
 func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_secondary: bool) -> void:
+	var projectile: Projectile = _launch_projectile(direction, speed, damage)
 	# 生成できなかったときに発火しない: 弾の無い発射を受け手が本物の 1 発と区別できない
-	if not _launch_projectile(direction, speed, damage):
+	if projectile == null:
 		return
+	# 主武器の弾には掛けない: 主武器の強化は弾数で表れており、色を重ねる必要がない
+	if is_secondary and _is_primary_upgraded:
+		projectile.modulate = upgraded_secondary_tint
 	fired.emit(direction, is_secondary)
 
 
@@ -164,18 +174,19 @@ func _spawn_spread(direction: Vector2i, speed: float, damage: int) -> void:
 	var directions: Array[Vector2] = SpreadResolver.resolve(direction)
 	for spread_direction: Vector2 in directions:
 		# 生成できなかったときに発火しない: 弾の無い発射を受け手が本物の 1 発と区別できない
-		if not _launch_projectile(spread_direction, speed, damage):
+		if _launch_projectile(spread_direction, speed, damage) == null:
 			return
 
 	fired.emit(direction, false)
 	spread_fired.emit(directions)
 
 
-# `direction` を `Vector2i` にしない: 拡散の 3 方向は 8 方向の格子に載らない
-func _launch_projectile(direction: Vector2, speed: float, damage: int) -> bool:
+# `direction` を `Vector2i` にしない: 拡散の 3 方向は 8 方向の格子に載らない。
+# 真偽ではなく生成した弾を返す: 見た目の調整を呼び出し側が行うには弾そのものが要る
+func _launch_projectile(direction: Vector2, speed: float, damage: int) -> Projectile:
 	if projectile_scene == null:
 		push_error(MISSING_PROJECTILE_SCENE_ERROR)
-		return false
+		return null
 
 	var projectile: Projectile = projectile_scene.instantiate()
 	# 自分の子にしない: 弾がプレイヤーと一緒に動き、進行方向どおりに飛ばなくなる。
@@ -188,7 +199,7 @@ func _launch_projectile(direction: Vector2, speed: float, damage: int) -> bool:
 	# 位置を決めてから launch() する: 射程は launch() を呼んだ時点の位置から測る
 	projectile.global_position = global_position
 	projectile.launch(direction, speed, damage, stats.bullet_max_distance)
-	return true
+	return projectile
 
 
 # 項目名の並びをここに持たず get_property_list() から導く: 並びを持つと、`PlayerStats` へ
