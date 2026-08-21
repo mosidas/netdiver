@@ -206,7 +206,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   旧形式を削除する。**3.1 → 3.2 → 3.3 の順を崩さない**(3.1 が `Player` から参照を落とさない限り `AbilitySlot` を消せず、3.2 が `ability_slot_test.gd` を消さない限り `PlayerStats` の 4 項目を消せない)。各サブタスクは削除するコードと、それを検証していたテストを**同じコミットで**消し、途中で赤を作らない。削除の波及は 1 ディレクトリに収まらないため、**検証コマンドは絞らず `make test`(全体)とする**。
 
-  - [ ] 3.1 `Player` から第 3 の枠を撤去する
+  - [x] 3.1 `Player` から第 3 の枠を撤去する
     _Requirements: 10.3_
     _Boundary: Player_
     _Depends: 2.2_
@@ -517,6 +517,15 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - レビューの `[Nit]`: 9.5(水平)は各アクタの `ColorRect` だけを見ており、当たり矩形の水平方向を見ていない(9.6 は当たりと見た目の両方を見る)。`CollisionShape2D.position.x` を横へずらす変異は生存する。タスク定義の要点に従った形であり要件違反ではないため対処しない。
 - レビューの `[Nit]`: `test_no_enemy_appears_while_the_stage_runs` の観測時間 200ms は、射撃型の `telegraph_time` 0.4 と弾速 120 に暗黙に依存する。本単位では stats を触らないため実害はない。
 
+### タスク 3.1 の学習
+
+- **`Player` から枠を落とした後、`src/` の中で `stats.ability_*` を読む箇所は無くなった**(宣言のみ `src/player/player_stats.gd` に残る。実測)。タスク 3.3 は宣言の削除だけで足りる。
+- `AbilitySlot` を参照するのは `src/ability/ability_slot.gd` 自身と `tests/ability/ability_slot_test.gd` だけになった(タスク 3.2 への申し送り)。
+- `SpreadResolver` を参照するのは `src/ability/spread_resolver.gd` 自身と `tests/ability/spread_resolver_test.gd` だけになった。据え置いたので無検証の期間は生じていない(タスク 4.1 への申し送り)。
+- **「副武器の素通しへ戻す」の検出力は、変更しない unit #2 のスイートが持つ。** `_secondary_weapon.update(cmd.secondary_held, delta)` を `update(false, delta)` にする変異で `tests/player/player_weapon_test.gd` の 5 ケースが落ちることを実測した。本単位が新しいテストを足さなくても、戻し損ねは既存スイートが捕らえる。
+- レビューの `[FYI]`: `tests/stage/analysis_dev_stage_test.gd` の記録用スタブ(`extends Player`)が宣言する `grant_ability()` は、基底から同名メソッドが消えたためオーバーライドでなく新規メソッドになった。GDScript ではエラーにならず同スイートは緑のまま。
+- リポジトリのルートに GDScript の formatter 設定(gdformat/gdlint)は無く、CI にも整形ステップが無い。既存ファイルの体裁(タブ・トップレベル定義間の空行 2 行)へ合わせる。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -527,4 +536,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 2.1 の後 | 595 | 38 |
 | 2.2 の後 | 578 | 37 |
 | 2.3 の後 | 598 | 38 |
+| 3.1 の後 | 554 | 35 |
 
