@@ -152,7 +152,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 
   撃破の配線を、演出を経てステージが取得を配る形から、断片を撃破位置へ置くだけの形へ移す。この段で `analysis_dev_stage.gd` から `Player.grant_ability()` と `AnalysisPulse` への参照が消え、タスク 3 の削除が可能になる。
 
-  - [ ] 2.1 (P) 2 つ目の仮ステージとそのテストを削除する
+  - [x] 2.1 (P) 2 つ目の仮ステージとそのテストを削除する
     _Requirements: 9.14_
     _Boundary: AnalysisDevStage_
     - 対象ファイル: `src/stage/analysis_overwrite_dev_stage.tscn`(削除), `tests/stage/analysis_overwrite_dev_stage_test.gd`(削除), `tests/stage/analysis_overwrite_dev_stage_test.gd.uid`(削除)
@@ -490,4 +490,20 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`analysis_fragment_scene_test.gd` は 7.14 の比較のために `src/stage/analysis_dev_stage.tscn` を `load()` する。** そのため `analysis_dev_stage.tscn` の `ext_resource` が壊れると本スイートも赤になる。タスク 3.4(`analysis_pulse.tscn` の削除)は 2.2(`ext_resource` の差し替え)より後でなければならないという既存の順序制約が、この経路からも効く。
 - ツリーへ載せずに `ColorRect` の `size`/`position` を読む形は、anchors が既定の 0 かつ親が `Area2D` で anchorable rect が 0 のため、載せたときの値と一致する(レビューの `[FYI]`)。
 - レビューの `[FYI]`: ヘルパ `_placeholder()`/`_collision_shape()` は件数のアサーションが失敗しても添字へ進むため、0 件のときは失敗メッセージでなく実行時エラーになる(gdUnit4 は赤にするため検出力は落ちない)。
+
+### タスク 2.1 の学習
+
+- **`.tscn` を消す前にヘッダの `uid=` の有無を見ると、確認すべき範囲が決まる。** `analysis_overwrite_dev_stage.tscn` はヘッダに `uid=` を持たなかった(`[gd_scene load_steps=7 format=3]`)ため、uid 経由の参照は原理的に無く、パス文字列の検索だけで参照ゼロを結論づけられた。
+- 削除した 2 つ目のシーンは `src/stage/analysis_dev_stage.gd` を `ext_resource` で参照していた(**2 つのシーンが 1 つのスクリプトを共有していた**)。スクリプトは 1 つ目のシーンが引き続き使うため残す。
+- 削除の巻き添えは統計の**差分**で検出できる。消したスイートの `func test_` の実数(21)とケース数の減少幅が一致することを見る。
+- タスク 6.1 へ: `docs/testing.md` に 2 つ目のシーンの起動方法が残っている(実ファイルは既に無い)。6.1 は「消えたファイルへの案内」を取り除く作業になる。
+
+### 統計行の推移(基線 594 cases / 37 suites)
+
+| 時点 | cases | suites |
+| ---- | ----- | ------ |
+| 基線 | 594 | 37 |
+| 1.1 の後 | 606 | 38 |
+| 1.2 の後 | 616 | 39 |
+| 2.1 の後 | 595 | 38 |
 
