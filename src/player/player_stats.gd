@@ -19,8 +19,3 @@ extends Resource
 @export var secondary_bullet_speed: float = 300.0
 
 @export var bullet_max_distance: float = 400.0
-
-@export var ability_uses: int = 3
-@export var ability_cooldown: float = 1.5
-@export var ability_damage: int = 20
-@export var ability_bullet_speed: float = 300.0

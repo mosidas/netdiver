@@ -233,7 +233,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 削除の後に `make test` の統計行の `orphans`・`skipped`・`failures`・`errors` がすべて 0 であることを確かめる
     - 検証コマンド: `make test`
 
-  - [ ] 3.3 `PlayerStats` から `ability_*` の 4 項目を削除する
+  - [x] 3.3 `PlayerStats` から `ability_*` の 4 項目を削除する
     _Requirements: 10.4, 10.5, 11.11, 11.12_
     _Boundary: PlayerStats_
     _Depends: 3.2_
@@ -533,6 +533,16 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - **`.godot/global_script_class_cache.cfg` に削除したクラスのエントリが残る。** これは `.gitignore` 済みの生成物であり、以降の削除タスクでこのキャッシュのヒットを参照残存と誤判定しない。
 - 3.3 への申し送り: `src/player/player_stats.gd` の `ability_*` 4 項目を読む箇所は、これでテスト側だけになったはず。削除前に `ability_uses|ability_cooldown|ability_damage|ability_bullet_speed` を `src`・`tests` で再検索し、残る読み手が同時削除対象のテストに限られることを確かめる。
 
+### タスク 3.3 の学習
+
+- 削除は 4 宣言と区切りの空行だけで足りた。既存 14 項目は HEAD とバイト単位で同一であり、`src/player/player.gd` は変更していない(`_report_non_positive_stats()` は `get_property_list()` から導くため、項目が減れば検査対象も自動で減る)。
+- 11.12 の検出力は、変更しない `tests/player/player_stats_test.gd` が単独で持つ。`regen_delay` の既定値を 3.0 → 4.0 にする変異で `test_player_stats_health_defaults` が落ちることを実測した。
+
+#### 対処しないと決めた検出力の欠陥(規律 7 により記録のみ)
+
+1. **要件 10.5(「14 項目ちょうど」)は非排他な検査しか無い。** `tests/player/player_stats_test.gd` は `assert_array(...).contains(STAT_NAMES)` で「含むこと」だけを見るため、**`PlayerStats` に 15 項目目を足す変異は全体が緑のまま生存する**。要件 11.9 が同スイートを凍結しているため改訂で塞げない(塞ぐと要件違反になる)。タスク 3.5 の grep は `ability_*` の 4 語については補うが、**別名の 15 項目目は捕らえられない**。等価変異ではない、残る欠陥である。
+2. **削除で失われた検出力。** 消した `tests/player/player_ability_stats_test.gd` の `test_ready_checks_an_ability_stat_the_implementation_cannot_know_by_name` は、`PlayerStats` を継承して実装が名前で知りようのない項目を足し、`Player._report_non_positive_stats()` が `stats.get_property_list()` から検査対象を導いていることを固定する**リポジトリ内で唯一のケース**だった(`tests/player/player_move_test.gd` は 14 項目の固定リストしか見ていない)。削除後に生存する変異は「同関数を 14 項目の名前を固定で列挙して回すループへ書き換える」。要件 10.7 が削除を命じているため対処しない。**後続で `PlayerStats` に項目を足す・派生させる作業が入る場合、`Player` の検査が新項目を素通りする退行を誰も捕らえられない**ことを前提にすること。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -545,4 +555,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 2.3 の後 | 598 | 38 |
 | 3.1 の後 | 554 | 35 |
 | 3.2 の後 | 525 | 34 |
+| 3.3 の後 | 516 | 33 |
 
