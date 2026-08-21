@@ -220,7 +220,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `tests/player/player_move_test.gd`・`player_health_test.gd`・`player_scene_test.gd`・`player_stats_test.gd` も同じく変更なしで緑であること
     - 検証コマンド: `make test`(タスク 3 の削除は `tests/player` の外へ波及しうるため、絞らず全体で確かめる)
 
-  - [ ] 3.2 `AbilitySlot` を削除する
+  - [x] 3.2 `AbilitySlot` を削除する
     _Requirements: 10.1_
     _Boundary: AbilitySlot_
     _Depends: 3.1_
@@ -526,6 +526,13 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - レビューの `[FYI]`: `tests/stage/analysis_dev_stage_test.gd` の記録用スタブ(`extends Player`)が宣言する `grant_ability()` は、基底から同名メソッドが消えたためオーバーライドでなく新規メソッドになった。GDScript ではエラーにならず同スイートは緑のまま。
 - リポジトリのルートに GDScript の formatter 設定(gdformat/gdlint)は無く、CI にも整形ステップが無い。既存ファイルの体裁(タブ・トップレベル定義間の空行 2 行)へ合わせる。
 
+### タスク 3.2 の学習
+
+- **削除タスクの検算式**: 「ケース数の減少幅 == 削除したスイートの `func test_` の実数」「スイート数の減少幅 == 削除したテストファイル数」。これで消しすぎ・消し足りない・参照の宙吊りの 3 つの失敗モードを検出できる。
+- **`.uid` の中身(`uid://...`)を検索語にする確認が有効。** `.uid` は `.tscn` の `ext_resource` から参照されうるため、識別子名の検索だけでは宙吊りを見落とす。
+- **`.godot/global_script_class_cache.cfg` に削除したクラスのエントリが残る。** これは `.gitignore` 済みの生成物であり、以降の削除タスクでこのキャッシュのヒットを参照残存と誤判定しない。
+- 3.3 への申し送り: `src/player/player_stats.gd` の `ability_*` 4 項目を読む箇所は、これでテスト側だけになったはず。削除前に `ability_uses|ability_cooldown|ability_damage|ability_bullet_speed` を `src`・`tests` で再検索し、残る読み手が同時削除対象のテストに限られることを確かめる。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -537,4 +544,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 2.2 の後 | 578 | 37 |
 | 2.3 の後 | 598 | 38 |
 | 3.1 の後 | 554 | 35 |
+| 3.2 の後 | 525 | 34 |
 
