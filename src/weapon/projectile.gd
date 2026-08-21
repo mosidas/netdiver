@@ -36,8 +36,18 @@ func _ready() -> void:
 ## 弾を発射する。射程はこの呼び出しの時点の位置から測る。
 ##
 ## 事前条件: 呼び出し側は発射位置を設定してから呼ぶ。発射後に位置を動かすと、その移動分が
-## 射程から差し引かれる。`direction` は `Vector2i.ZERO` 以外、`speed`・`damage`・
+## 射程から差し引かれる。`direction` は `Vector2.ZERO` 以外、`speed`・`damage`・
 ## `max_distance` は正。違反した場合は弾を進めずに返る。
+##
+## `direction` に `Vector2i` を使わない: 整数のベクトルは 8 方向の格子の上の値しか表せず、
+## 水平から 20 度のような向きを渡せない。その向きのために弾のクラスを分ける案は採らない。
+## レイヤ・射程・地形との衝突・解放のしかたが同じものが 2 つに分かれる。8 方向は `Vector2i`
+## からの暗黙変換でそのまま渡せるため、整数の向きを渡す呼び出し側は変えずに済む。
+##
+## `ZERO_DIRECTION_ERROR` の文言だけが `Vector2i.ZERO` を指したまま残る: 実装の定数を
+## 参照せず同じ文言を自分の定数として持つテスト(`tests/weapon/projectile_test.gd`)が
+## 文言の退行を検出しており、そのテストは改訂しない方針であるため、文言を据え置く。
+## 文言の訂正は、そのテストを改訂する作業単位で行う。
 @warning_ignore("shadowed_variable")
 func launch(direction: Vector2, speed: float, damage: int, max_distance: float) -> void:
 	# ガードを関数の先頭に置く: 後ろに置くと、拒否する前に damage と射程の代入が済んでしまう
