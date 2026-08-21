@@ -39,9 +39,11 @@ func _ready() -> void:
 ## 射程から差し引かれる。`direction` は `Vector2i.ZERO` 以外、`speed`・`damage`・
 ## `max_distance` は正。違反した場合は弾を進めずに返る。
 @warning_ignore("shadowed_variable")
-func launch(direction: Vector2i, speed: float, damage: int, max_distance: float) -> void:
+func launch(direction: Vector2, speed: float, damage: int, max_distance: float) -> void:
 	# ガードを関数の先頭に置く: 後ろに置くと、拒否する前に damage と射程の代入が済んでしまう
-	if direction == Vector2i.ZERO:
+	# 短さは見ない: 長さが 0 でない限り `normalized()` は向きを返すため、短い向きを弾くのは
+	# 事前条件(`Vector2.ZERO` でないこと)より広い
+	if direction == Vector2.ZERO:
 		push_error(ZERO_DIRECTION_ERROR)
 		return
 	if speed <= 0.0:
@@ -58,8 +60,9 @@ func launch(direction: Vector2i, speed: float, damage: int, max_distance: float)
 	_max_distance = max_distance
 	# 生成時の位置を基準にしない: 呼び出し側は生成してから発射位置を決めるため基準がずれる
 	_launch_position = position
-	# Vector2i のまま長さを測らない: 斜めの向きで速さが speed を超える
-	_velocity = Vector2(direction).normalized() * speed
+	# 向きを 8 方向へ丸めない: 8 方向の格子に載らない向きへ撃てなくなる。正規化を省くのも
+	# 不可。斜めや長さが 1 を超える向きで速さが speed を超える
+	_velocity = direction.normalized() * speed
 
 
 func _physics_process(delta: float) -> void:

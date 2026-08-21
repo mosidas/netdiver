@@ -297,7 +297,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 浮動小数の比較は `assert_float(...).is_equal_approx(..., <許容>)` か `assert_vector(...).is_equal_approx(...)` を使う。許容は 0.001 を目安にする
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-  - [ ] 4.2 (P) `Projectile.launch()` の `direction` を `Vector2` へ広げる
+  - [x] 4.2 (P) `Projectile.launch()` の `direction` を `Vector2` へ広げる
     _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.8, 2.9, 11.10_
     _Boundary: Projectile_
     - 対象ファイル: `src/weapon/projectile.gd`(変更), `tests/weapon/projectile_direction_test.gd`(新規)
@@ -577,6 +577,16 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 - gdUnit4 には `is_not_equal_approx` が無い。「近くない」ことは `assert_float(absf(angle)).is_greater(<許容>)` で書く。
 - `SpreadResolver.new().get_method_list()` は static な `resolve` を含み、`args[0]["type"]` が `TYPE_VECTOR2I`(6)として読める(Godot 4.7.1 で実測)。
 
+### タスク 4.2 の学習
+
+- **`direction == Vector2.ZERO` を採った**(`is_zero_approx()` ではない)。凍結済みの `EnemyProjectile.launch()` が同じ形であり、2 種の弾の契約が字面まで揃う。`is_zero_approx()` は長さ 1e-5 未満の非ゼロを弾くため、要件 2.6(短さを理由に拒否しない)に対して字義どおりには外れる。**等価変異(規律 7)として、この選択を固定するテスト(極小の非ゼロ向き)は意図的に置いていない。**
+- **「2.2 の 8 方向だけでは丸めの変異が素通りする」ことを実測した。** `direction.sign().normalized()` へ置き換える変異は、軸と斜めが不動点になるため 2.2 のケースを緑のまま通し、2.3(20 度・65 度等)のケースだけが落ちる。
+- **`Vector2` 型の実引数を `Vector2i` の仮引数へ渡す誤りは、GDScript の静的解析ではパースエラーにならず実行時にケースが失敗する形で現れる**(切り捨てで `(0,0)` になりゼロのガードに掛かる)。スイート全体がパースエラーで落ちるわけではないので、RED の切り分けは通常どおり行える。
+- 拡散(タスク 5.x)で使う 20 度は `Vector2.RIGHT.rotated(deg_to_rad(20.0))` で作れる。65 度・112.5 度・200 度・-20 度でも変位が正規化された向きと 0.001 の許容差で一致することを実機で確認した。
+- 速さを実測の変位から戻すアサーションの許容差は 0.01 で安定した(float32 の累積誤差の実測は 1e-3 程度)。
+- **タスク 4.3 への申し送り(必須)**: `launch()` の `##` doc コメントは今も「`direction` は `Vector2i.ZERO` 以外」と書いており、実装(`Vector2.ZERO`)と食い違っている。4.3 は型を広げたことと文言据え置きの理由に加え、**この事前条件の記述の訂正**も行う。
+- レビューの `[Nit]`: 新スイートは凍結スイートと `_assert_stays_in_place`・`_frame_step`・文言定数・レイヤ定数を重複して持つ。共通ヘルパへの抽出は凍結側の改訂を要するため現時点では許容する。
+
 ### 統計行の推移(基線 594 cases / 37 suites)
 
 | 時点 | cases | suites |
@@ -593,4 +603,5 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
 | 3.4 の後 | 486 | 31 |
 | 3.5 の後 | 486 | 31 |(検査のみ。変更なし)
 | 4.1 の後 | 492 | 31 |
+| 4.2 の後 | 502 | 32 |
 
