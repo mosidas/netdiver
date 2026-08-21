@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" path="res://src/player/player.tscn" id="2_player"]
 [ext_resource type="PackedScene" path="res://src/enemy/shooter_enemy.tscn" id="3_shooter_enemy"]
 [ext_resource type="PackedScene" path="res://src/enemy/charger_enemy.tscn" id="4_charger_enemy"]
-[ext_resource type="PackedScene" path="res://src/ability/analysis_pulse.tscn" id="5_analysis_pulse"]
+[ext_resource type="PackedScene" path="res://src/ability/analysis_fragment.tscn" id="5_analysis_fragment"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
 size = Vector2(320, 16)
@@ -14,7 +14,7 @@ size = Vector2(16, 108)
 
 [node name="AnalysisDevStage" type="Node2D"]
 script = ExtResource("1_analysis_dev_stage")
-pulse_scene = ExtResource("5_analysis_pulse")
+fragment_scene = ExtResource("5_analysis_fragment")
 
 [node name="Floor" type="StaticBody2D" parent="."]
 position = Vector2(160, 100)
