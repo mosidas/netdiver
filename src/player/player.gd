@@ -27,9 +27,18 @@ var health: Health
 
 var facing: int = 1
 
+## 主武器が拡散へ変わっているか。getter だけを持ち、非公開の状態から導く: 公開の可変フィールドに
+## すると外から任意に付け外しでき、「取得と体力の枯渇だけが状態を変える」不変条件を破れる。
+## GDScript はこの代入を拒否しないが、黙って無視するため状態は壊れない
+var is_primary_upgraded: bool:
+	get:
+		return _is_primary_upgraded
+
 ## 入力の差し替え点。headless では `InputEvent` がエンジンを通らず `Input` を経由した
 ## 検証ができないため、テストが差し替えられるよう契約の一部として公開する
 var input_source: Callable = PlayerInput.read
+
+var _is_primary_upgraded: bool = false
 
 var _primary_weapon: PrimaryWeapon
 var _secondary_weapon: SecondaryWeapon
@@ -80,6 +89,17 @@ func take_damage(amount: int) -> void:
 	health.take_damage(amount)
 
 
+## 主武器へ強化を加える。
+##
+## 事前条件: なし。体力の状態を検査しない
+## 事後条件: `is_primary_upgraded == true`。既に真である状態で呼ばれても変わらない(冪等)
+##
+## ツリーへ載せていない `Player` に対しても呼べる: `_ready()` を通らない経路で null になる
+## 状態を触らない
+func grant_upgrade() -> void:
+	_is_primary_upgraded = true
+
+
 func _physics_process(delta: float) -> void:
 	var cmd: PlayerCommand = input_source.call()
 	apply_command(cmd, delta, is_on_floor())
@@ -109,6 +129,8 @@ func _ensure_health() -> void:
 
 
 func _on_health_depleted() -> void:
+	# 発火より先に強化を戻す: 逆順だと、died を受けた側が既に死んだ相手を強化中として読む
+	_is_primary_upgraded = false
 	died.emit()
 
 
