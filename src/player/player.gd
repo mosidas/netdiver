@@ -10,6 +10,10 @@ extends CharacterBody2D
 signal died
 signal fired(direction: Vector2i, is_secondary: bool)
 
+## 拡散の 3 方向。`fired` の `direction` へ載せない: 20 度の向きは `Vector2i` で表せず、
+## 8 方向を運ぶ `fired` の意味も変わってしまう
+signal spread_fired(directions: Array[Vector2])
+
 const MISSING_STATS_ERROR: String = "Player: stats が設定されていない。既定値の PlayerStats を使う"
 const INVALID_DELTA_ERROR: String = "Player.apply_command(): delta は正でなければならない。速度を変えずに返る"
 const INVALID_STAT_ERROR_FORMAT: String = "Player: stats.%s は正でなければならない(現在値: %s)"
@@ -112,7 +116,11 @@ func _update_weapons(cmd: PlayerCommand, direction: Vector2i, delta: float) -> v
 	_primary_weapon.tick(delta)
 	# 押していないときに try_fire() を呼ばない: 呼ぶと経過時間が戻り、押した瞬間の 1 発が遅れる
 	if cmd.primary_held and _primary_weapon.try_fire():
-		_spawn_projectile(direction, stats.primary_bullet_speed, stats.primary_damage, false)
+		# 発射できるかの判定を強化の有無で分けない: 分けると連射間隔が強化で変わる
+		if _is_primary_upgraded:
+			_spawn_spread(direction, stats.primary_bullet_speed, stats.primary_damage)
+		else:
+			_spawn_projectile(direction, stats.primary_bullet_speed, stats.primary_damage, false)
 
 	if _secondary_weapon.update(cmd.secondary_held, delta):
 		_spawn_projectile(direction, stats.secondary_bullet_speed, stats.secondary_damage, true)
@@ -150,7 +158,21 @@ func _spawn_projectile(direction: Vector2i, speed: float, damage: int, is_second
 	fired.emit(direction, is_secondary)
 
 
-func _launch_projectile(direction: Vector2i, speed: float, damage: int) -> bool:
+# 角度も並びも組み立てない: 拡散の決め方を `SpreadResolver` と二重に持つと、片方だけを
+# 変えたときに弾の広がりと当たり判定の想定がずれる
+func _spawn_spread(direction: Vector2i, speed: float, damage: int) -> void:
+	var directions: Array[Vector2] = SpreadResolver.resolve(direction)
+	for spread_direction: Vector2 in directions:
+		# 生成できなかったときに発火しない: 弾の無い発射を受け手が本物の 1 発と区別できない
+		if not _launch_projectile(spread_direction, speed, damage):
+			return
+
+	fired.emit(direction, false)
+	spread_fired.emit(directions)
+
+
+# `direction` を `Vector2i` にしない: 拡散の 3 方向は 8 方向の格子に載らない
+func _launch_projectile(direction: Vector2, speed: float, damage: int) -> bool:
 	if projectile_scene == null:
 		push_error(MISSING_PROJECTILE_SCENE_ERROR)
 		return false
