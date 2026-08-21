@@ -134,7 +134,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - `Area2D` の重なりの通知は 1 物理フレーム遅れる(spec.md §3)。接触を検証するケースは 2 フレーム分を上限に取る
     - 検証コマンド: `make test TESTS=res://tests/ability`
 
-  - [ ] 1.2 `analysis_fragment.tscn` を作り、構成を固定する
+  - [x] 1.2 `analysis_fragment.tscn` を作り、構成を固定する
     _Requirements: 7.2, 7.3, 7.12, 7.13, 7.14_
     _Boundary: AnalysisFragment_
     _Depends: 1.1_
@@ -481,4 +481,13 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
   - 停止のケースはポーズを観測した直後に**テスト本体で**元へ戻す(`after_test()` の復元だけに頼ると、同じスイートの後続のケースが物理フレームを消化できなくなる)。
 - 断片はシーンを持たなくても振る舞いを検証できる。テストは `collision_layer`/`collision_mask`/当たり判定をテスト側で組み立て、シーンの契約(1.2)を先取りしない。
 - レビューの `[FYI]`: 既存の `tests/ability/analysis_pulse_test.gd` の `_assert_the_time_stays_untouched()` も `paused` を既定側だけで見ており、同じ穴を持つ。ただし同スイートはタスク 3.4 で削除されるため対処しない。
+
+### タスク 1.2 の学習
+
+- **シーンの寸法・原点を見る検査は「値」と「親」を対にする。** `position == Vector2.ZERO` を保ったまま、ずらした中間ノードの下へ移す変異は、値だけの検査を素通りする。後続のシーン検証タスク(2.3 等)でも、`position` を見るなら「その `position` の基準がどのノードか」を同じケースで固定する。
+- **`ColorRect.position` は矩形の左上、`CollisionShape2D.position` は形の中心を指す。** ゆえに「原点が中心」の表し方が前者は `-size * 0.5`、後者は `Vector2.ZERO` と非対称になる。同じ式で書こうとすると誤る。
+- 7.14 の比較対象 9 シーンから読める相異なる色は **8 色**(プレイヤー・突進型・射撃型・味方の弾・敵弾・ダメージ帯・床壁・足場)。断片の色 `Color(0.85, 0.45, 0.95, 1)` はいずれとも一致しない。テストは下限 8 を番人に持ち、9 シーンのどれか 1 つを一覧から落とすと落ちる。
+- **`analysis_fragment_scene_test.gd` は 7.14 の比較のために `src/stage/analysis_dev_stage.tscn` を `load()` する。** そのため `analysis_dev_stage.tscn` の `ext_resource` が壊れると本スイートも赤になる。タスク 3.4(`analysis_pulse.tscn` の削除)は 2.2(`ext_resource` の差し替え)より後でなければならないという既存の順序制約が、この経路からも効く。
+- ツリーへ載せずに `ColorRect` の `size`/`position` を読む形は、anchors が既定の 0 かつ親が `Area2D` で anchorable rect が 0 のため、載せたときの値と一致する(レビューの `[FYI]`)。
+- レビューの `[FYI]`: ヘルパ `_placeholder()`/`_collision_shape()` は件数のアサーションが失敗しても添字へ進むため、0 件のときは失敗メッセージでなく実行時エラーになる(gdUnit4 は赤にするため検出力は落ちない)。
 
