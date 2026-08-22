@@ -42,8 +42,15 @@ const OFF_AXIS_DEGREES: float = 20.0
 const OFF_AXIS_DEGREES_LIST: Array[float] = [
 	OFF_AXIS_DEGREES, -OFF_AXIS_DEGREES, 65.0, 112.5, 200.0
 ]
+# 拒否の境界(長さ 0)のすぐ外にある向き。`Vector2.ZERO` と等しくないが、近似の比較では
+# ゼロと見なされる短さである。この 1 件が無いと、ガードを近似の比較へ緩める変更が
+# 素通りする(残る 2 件はどちらも近似の許容差より十分大きい)
+const JUST_OUTSIDE_ZERO_DIRECTION: Vector2 = Vector2(0.000001, 0.0)
+
 # 長さが 1 でない向き。短さも 8 方向からのずれも拒否の理由にしない
-const UNNORMALIZED_DIRECTIONS: Array[Vector2] = [Vector2(0.3, 0.0), Vector2(3.0, 1.0)]
+const UNNORMALIZED_DIRECTIONS: Array[Vector2] = [
+	Vector2(0.3, 0.0), Vector2(3.0, 1.0), JUST_OUTSIDE_ZERO_DIRECTION
+]
 
 # 数フレーム(60 Hz で 1 フレーム約 17 ms)に対して余裕を取る: CI のランナーが遅い場合でも
 # 物理フレームを消化させる。消化した数はアサーションで確かめるため待ち時間に依存しない
@@ -152,6 +159,14 @@ func test_launch_accepts_directions_that_are_not_unit_length() -> void:
 
 	# 進んだことだけでなく、進んだ向きが正規化された向きであることまで見る
 	_assert_travelled_along(projectiles, UNNORMALIZED_DIRECTIONS)
+
+
+# 番人。上の 1 件が「境界のすぐ外」であり続けることを固定する。値を大きく書き換えると、
+# 近似の比較へ緩めた実装を落とせなくなる
+func test_the_suite_drives_a_direction_that_the_approximate_comparison_calls_zero() -> void:
+	assert_bool(JUST_OUTSIDE_ZERO_DIRECTION.is_zero_approx()).is_true()
+	assert_bool(JUST_OUTSIDE_ZERO_DIRECTION == Vector2.ZERO).is_false()
+	assert_array(UNNORMALIZED_DIRECTIONS).contains([JUST_OUTSIDE_ZERO_DIRECTION])
 
 
 func test_launch_rejects_a_zero_vector2_direction() -> void:

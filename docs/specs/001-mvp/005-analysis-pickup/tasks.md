@@ -490,7 +490,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 変異で確かめる(規律): `src/player/player_stats.gd` の末尾へ `@export var ability_uses: int = 3` を足すと落ちること(10.5 と 10.6 の両方が落ちる)
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-  - [ ] 8.3 境界のすぐ外の向きを拒否しないことを固定する(C3)
+  - [x] 8.3 境界のすぐ外の向きを拒否しないことを固定する(C3)
     _Requirements: 2.6_
     _Boundary: Projectile_
     _Depends: 7.1_
