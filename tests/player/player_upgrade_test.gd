@@ -55,6 +55,23 @@ const FORBIDDEN_STATE_TOKENS: Array[String] = [
 	"stack",
 ]
 
+# `Player` のスクリプト変数のちょうどの集合。上の名前の拒否リストは、リストに当たらない名前で
+# 状態を持ち込む変異(残り回数を `_burst_budget` と名付ける等)を素通りさせる。`Player` の
+# 変数は有限であるため、集合そのものを固定して「足せない」ことで塞ぐ。
+# 両方を置く: 個数と並びだけでは、既存の項目を残り回数の意味へ改名する変異が落ちない
+const PLAYER_SCRIPT_VARIABLES: Array[String] = [
+	"stats",
+	"projectile_scene",
+	"upgraded_secondary_tint",
+	"health",
+	"facing",
+	"is_primary_upgraded",
+	"input_source",
+	"_is_primary_upgraded",
+	"_primary_weapon",
+	"_secondary_weapon",
+]
+
 
 func _create_stats() -> PlayerStats:
 	var stats: PlayerStats = auto_free(PlayerStats.new())
@@ -241,6 +258,18 @@ func test_the_upgrade_state_is_a_single_bool() -> void:
 		"強化の種類・残り回数・残り時間を思わせる状態がある: %s" % ", ".join(offending_names)
 	).is_empty()
 	assert_dict(property_types).contains_key_value("is_primary_upgraded", TYPE_BOOL)
+
+
+func test_the_player_keeps_exactly_the_declared_script_variables() -> void:
+	var player: Player = _create_ready_player()
+	var names: Array[String] = []
+	for property: Dictionary in _script_variables(player):
+		names.append(property["name"])
+
+	# 個数だけでなく並びまで見る: 個数だけだと、1 つ消して 1 つ足す変異が素通りする
+	assert_array(names).append_failure_message(
+		"`Player` のスクリプト変数が増減した: %s" % ", ".join(names)
+	).is_equal(PLAYER_SCRIPT_VARIABLES)
 
 
 func test_the_player_command_keeps_exactly_five_fields() -> void:
