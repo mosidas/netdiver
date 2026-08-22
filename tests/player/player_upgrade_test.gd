@@ -59,6 +59,15 @@ const FORBIDDEN_STATE_TOKENS: Array[String] = [
 # 状態を持ち込む変異(残り回数を `_burst_budget` と名付ける等)を素通りさせる。`Player` の
 # 変数は有限であるため、集合そのものを固定して「足せない」ことで塞ぐ。
 # 両方を置く: 個数と並びだけでは、既存の項目を残り回数の意味へ改名する変異が落ちない
+# 凍結済みの `fired` の引数。GDScript はシグナルの宣言型を発火時に強制しないため、
+# 受け取った値の型を見る振る舞い側のケースでは宣言の退行を捕らえられない。宣言そのものを
+# `get_signal_list()` から読む。[名前, 型] の対で持ち、並びと個数も固定する
+const FROZEN_FIRED_ARGUMENTS: Array = [
+	["direction", TYPE_VECTOR2I],
+	["is_secondary", TYPE_BOOL],
+]
+const FIRED_SIGNAL_NAME: String = "fired"
+
 const PLAYER_SCRIPT_VARIABLES: Array[String] = [
 	"stats",
 	"projectile_scene",
@@ -106,6 +115,17 @@ func _script_variables(target: Object) -> Array[Dictionary]:
 			continue
 		found.append(property)
 	return found
+
+
+func _signal_arguments(target: Object, signal_name: String) -> Array:
+	for signal_info: Dictionary in target.get_signal_list():
+		if signal_info["name"] != signal_name:
+			continue
+		var arguments: Array = []
+		for argument: Dictionary in signal_info["args"]:
+			arguments.append([argument["name"], int(argument["type"])])
+		return arguments
+	return []
 
 
 func _input_section() -> String:
@@ -276,6 +296,19 @@ func test_the_player_command_keeps_exactly_five_fields() -> void:
 	var command: PlayerCommand = auto_free(PlayerCommand.new())
 
 	assert_int(_script_variables(command).size()).is_equal(COMMAND_FIELD_COUNT)
+
+
+func test_the_fired_signal_keeps_its_declared_arguments() -> void:
+	var player: Player = _create_ready_player()
+
+	var arguments: Array = _signal_arguments(player, FIRED_SIGNAL_NAME)
+
+	# 走査が空振りしていないことを先に固定する: 名前を取り違えると空のまま緑になる
+	assert_array(arguments).is_not_empty()
+	# 名前・型・並び・個数を一度に見る: 個数を見ないと、3 つ目を足す変更が素通りする
+	assert_array(arguments).append_failure_message(
+		"`%s` の宣言が変わった: %s" % [FIRED_SIGNAL_NAME, arguments]
+	).is_equal(FROZEN_FIRED_ARGUMENTS)
 
 
 func test_the_project_input_section_is_unchanged() -> void:

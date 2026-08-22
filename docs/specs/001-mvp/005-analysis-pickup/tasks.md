@@ -504,7 +504,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 変異で確かめる(規律): `src/weapon/projectile.gd` の `if direction == Vector2.ZERO:` を `if direction.is_zero_approx():` へ変えると落ちること
     - 検証コマンド: `make test TESTS=res://tests/weapon`
 
-  - [ ] 8.4 `fired` のシグナル宣言を読む検査を置く(C4)
+  - [x] 8.4 `fired` のシグナル宣言を読む検査を置く(C4)
     _Requirements: 11.3_
     _Boundary: Player_
     _Depends: 7.1_
