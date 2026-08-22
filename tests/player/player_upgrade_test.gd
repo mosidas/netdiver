@@ -55,10 +55,6 @@ const FORBIDDEN_STATE_TOKENS: Array[String] = [
 	"stack",
 ]
 
-# `Player` のスクリプト変数のちょうどの集合。上の名前の拒否リストは、リストに当たらない名前で
-# 状態を持ち込む変異(残り回数を `_burst_budget` と名付ける等)を素通りさせる。`Player` の
-# 変数は有限であるため、集合そのものを固定して「足せない」ことで塞ぐ。
-# 両方を置く: 個数と並びだけでは、既存の項目を残り回数の意味へ改名する変異が落ちない
 # 凍結済みの `fired` の引数。GDScript はシグナルの宣言型を発火時に強制しないため、
 # 受け取った値の型を見る振る舞い側のケースでは宣言の退行を捕らえられない。宣言そのものを
 # `get_signal_list()` から読む。[名前, 型] の対で持ち、並びと個数も固定する
@@ -68,6 +64,10 @@ const FROZEN_FIRED_ARGUMENTS: Array = [
 ]
 const FIRED_SIGNAL_NAME: String = "fired"
 
+# `Player` のスクリプト変数のちょうどの集合。`FORBIDDEN_STATE_TOKENS` は、リストに当たらない
+# 名前で状態を持ち込む変異(残り回数を `_burst_budget` と名付ける等)を素通りさせる。`Player` の
+# 変数は有限であるため、集合そのものを固定して「足せない」ことで塞ぐ。
+# 両方を置く: 個数と並びだけでは、既存の項目を残り回数の意味へ改名する変異が落ちない
 const PLAYER_SCRIPT_VARIABLES: Array[String] = [
 	"stats",
 	"projectile_scene",
