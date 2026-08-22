@@ -1,6 +1,9 @@
 extends GdUnitTestSuite
 
+const STAGE_SCENE_PATH: String = "res://src/stage/analysis_dev_stage.tscn"
 const STAGE_SCRIPT_PATH: String = "res://src/stage/analysis_dev_stage.gd"
+const STAGE_DIRECTORY: String = "res://src/stage"
+const SCENE_EXTENSION: String = "tscn"
 
 const STAGE_SCENE: PackedScene = preload("res://src/stage/analysis_dev_stage.tscn")
 
@@ -22,6 +25,11 @@ const EXPECTED_ENEMY_COUNT: int = 2
 const EXPECTED_SHOOTER_COUNT: int = 1
 const EXPECTED_CHARGER_COUNT: int = 1
 const EXPECTED_PLAYER_COUNT: int = 1
+const EXPECTED_ACTOR_COUNT: int = 3
+const EXPECTED_ANALYSIS_STAGE_SCENE_COUNT: int = 1
+
+# 走査が空振りしていないことの下限。`src/stage/` には仮ステージが 3 つ以上ある
+const MINIMUM_SCANNED_SCENE_COUNT: int = 3
 
 # 脅威の圏の半径。閾値「160 + その敵の detect_range」の 160 にあたる。
 # 敵ごとの索敵範囲はテストへ直書きせず、その敵の `stats` から読む
@@ -31,13 +39,17 @@ const MAX_ENEMIES_IN_THREAT_RING: int = 2
 # 出現の仕組みに使われる型。ステージのどこにも現れないこと
 const SPAWNER_CLASS_NAMES: Array[String] = ["Timer", "MultiplayerSpawner"]
 
-# シーンが持ってよい PackedScene の参照。いずれも弾か解析の演出であり、敵を出す口ではない。
+# ルートが持ってよい `PackedScene` の `@export`。「1 つだけ」で見る:
+# 「`fragment_scene` があること」だけを見ると、消し残った `pulse_scene` が素通りする
+const EXPECTED_ROOT_PACKED_SCENE_EXPORTS: Array[String] = ["fragment_scene"]
+
+# シーンが持ってよい `PackedScene` の参照。いずれも弾か断片であり、敵を出す口ではない。
 # 「一致すること」ではなく「この集合に含まれること」で見る: 参照の有無ではなく、敵のシーンを
 # 指す参照が現れないことがここの関心である
 const ALLOWED_PACKED_SCENE_PROPERTIES: Array[String] = [
 	"Player.projectile_scene",
 	"ShooterEnemy.projectile_scene",
-	"AnalysisDevStage.pulse_scene",
+	"AnalysisDevStage.fragment_scene",
 ]
 
 # 上の集合の検査が空振りしていないことの witness。撃つ側の 2 つは配置だけで必ず現れる
@@ -93,13 +105,55 @@ func _enemies_in_the_whole_tree() -> Array[Enemy]:
 	return enemies
 
 
+# アクタを名前ではなく型で集める: 名前の一覧で引くと、同じ名前のまま別の型へ置き換える
+# 変異と、名前を変えただけの配置の両方が観測できなくなる
+func _actors_in(stage: Node) -> Array[Node2D]:
+	var actors: Array[Node2D] = []
+	for node: Node in _nodes_of(stage):
+		if node is Player or node is Enemy:
+			actors.append(node as Node2D)
+	return actors
+
+
+func _color_rects_of(node: Node) -> Array[ColorRect]:
+	var rects: Array[ColorRect] = []
+	for child: Node in node.get_children():
+		if child is ColorRect:
+			rects.append(child as ColorRect)
+	return rects
+
+
+# 見た目の範囲。`ColorRect` の `position` は矩形の左上を指す
+func _visual_rect(node: Node) -> Rect2:
+	var rects: Array[ColorRect] = _color_rects_of(node)
+	assert_int(rects.size()).append_failure_message(str(node.name)).is_equal(1)
+	if rects.size() != 1:
+		return Rect2()
+	var rect: ColorRect = rects[0]
+	return Rect2(rect.global_position, rect.size)
+
+
 func _rect_size(body: Node) -> Vector2:
 	var shape_node: CollisionShape2D = body.get_node_or_null(NodePath(SHAPE_NAME))
 	assert_object(shape_node).append_failure_message(str(body.name)).is_not_null()
+	if shape_node == null:
+		return Vector2.ZERO
 	assert_bool(shape_node.shape is RectangleShape2D).append_failure_message(
 		str(body.name)
 	).is_true()
+	if not (shape_node.shape is RectangleShape2D):
+		return Vector2.ZERO
 	return (shape_node.shape as RectangleShape2D).size
+
+
+# 当たりの範囲。`CollisionShape2D` の `position` は形の中心を指すため、見た目の矩形とは
+# 基準が違う。両方を見るのは、片方だけを動かす変異を通さないためである
+func _collision_rect(body: Node) -> Rect2:
+	var size: Vector2 = _rect_size(body)
+	var shape_node: CollisionShape2D = body.get_node_or_null(NodePath(SHAPE_NAME))
+	if shape_node == null:
+		return Rect2()
+	return Rect2(shape_node.global_position - size * 0.5, size)
 
 
 func _terrain_bodies(stage: Node) -> Array[Node]:
@@ -115,17 +169,74 @@ func _distance_to_player(stage: Node, enemy: Enemy) -> float:
 	return enemy.global_position.distance_to(player.global_position)
 
 
-func test_the_scene_root_carries_the_shared_stage_script() -> void:
+func _viewport_width() -> float:
+	# 基準解像度はステージではなくプロジェクト設定が持つ。テストへ複製しない
+	var width: float = float(ProjectSettings.get_setting("display/window/size/viewport_width"))
+	assert_float(width).is_greater(0.0)
+	return width
+
+
+func _packed_scene_export_names(node: Node) -> Array[String]:
+	var names: Array[String] = []
+	for property: Dictionary in node.get_property_list():
+		if int(property["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE == 0:
+			continue
+		# 値ではなく宣言の型で見る: `node.get(...) is PackedScene` は、宣言だけ残って
+		# 値が未設定になった `@export` を見落とす
+		if int(property["type"]) != TYPE_OBJECT:
+			continue
+		if str(property["class_name"]) != "PackedScene":
+			continue
+		names.append(str(property["name"]))
+	return names
+
+
+func test_the_scene_root_carries_the_stage_script() -> void:
 	var stage := _instantiate_stage()
 
 	assert_bool(stage is AnalysisDevStage).append_failure_message(
 		str(stage.get_class())
 	).is_true()
 	# 型だけでなくスクリプトの出どころまで見る: 配線の実装を写した別のスクリプトを付ける形は
-	# 型の検査だけでは落ちない(2 つの仮ステージが同じスクリプトを共有する前提)
+	# 型の検査だけでは落ちない
 	var script: Script = stage.get_script()
 	assert_object(script).is_not_null()
 	assert_str(str(script.resource_path)).is_equal(STAGE_SCRIPT_PATH)
+
+
+func test_the_project_holds_exactly_one_analysis_dev_stage_scene() -> void:
+	# ファイル名を固定で列挙しない: 列挙すると、3 つ目の仮ステージを足しても検査が通る。
+	# `src/stage/` を走査してルートの型で数える
+	var directory: DirAccess = DirAccess.open(STAGE_DIRECTORY)
+	assert_object(directory).is_not_null()
+	if directory == null:
+		return
+
+	var scanned: Array[String] = []
+	var analysis_stages: Array[String] = []
+	for file_name: String in directory.get_files():
+		if file_name.get_extension() != SCENE_EXTENSION:
+			continue
+		var path: String = STAGE_DIRECTORY.path_join(file_name)
+		scanned.append(path)
+		var scene: PackedScene = load(path)
+		assert_object(scene).append_failure_message(path).is_not_null()
+		if scene == null:
+			continue
+		var root: Node = auto_free(scene.instantiate())
+		if root is AnalysisDevStage:
+			analysis_stages.append(path)
+
+	# 走査が空振りしていないこと。0 件を数えても「1 つだけ」は成立しない
+	assert_int(scanned.size()).append_failure_message(str(scanned)).is_greater_equal(
+		MINIMUM_SCANNED_SCENE_COUNT
+	)
+	assert_array(analysis_stages).append_failure_message(str(analysis_stages)).has_size(
+		EXPECTED_ANALYSIS_STAGE_SCENE_COUNT
+	)
+	assert_array(analysis_stages).append_failure_message(str(analysis_stages)).contains(
+		[STAGE_SCENE_PATH]
+	)
 
 
 func test_the_stage_places_terrain_and_the_three_actors() -> void:
@@ -174,8 +285,6 @@ func test_the_stage_holds_one_shooter_and_one_charger() -> void:
 
 
 func test_the_single_player_is_a_direct_child_of_the_stage() -> void:
-	# 配線はステージの直下の子を型で走査してプレイヤーを引く。中間ノードの下へ入れると
-	# 演出の標的が null になり、目視で何も飛ばなくなる
 	var stage := _instantiate_stage()
 
 	var players: Array[Node] = []
@@ -194,12 +303,14 @@ func test_every_enemy_defeat_is_wired_to_the_stage_and_binds_its_own_path() -> v
 	# 検査が空振りしていないこと(接続を持つ相手が居ること)
 	assert_int(enemies.size()).is_equal(EXPECTED_ENEMY_COUNT)
 
+	var declared_connections: int = 0
 	for enemy: Enemy in enemies:
 		# `_ready()` で接続する実装では、`instantiate()` した時点の接続は 0 件になる
 		var connections: Array = enemy.get_signal_connection_list(&"defeated")
 		assert_int(connections.size()).append_failure_message(str(enemy.name)).is_equal(1)
 		if connections.size() != 1:
 			continue
+		declared_connections += 1
 
 		var callable: Callable = connections[0]["callable"]
 		assert_object(callable.get_object()).append_failure_message(str(enemy.name)).is_same(stage)
@@ -227,6 +338,12 @@ func test_every_enemy_defeat_is_wired_to_the_stage_and_binds_its_own_path() -> v
 		assert_object(stage.get_node_or_null(bound[0] as NodePath)).append_failure_message(
 			"%s -> %s" % [enemy.name, bound[0]]
 		).is_same(enemy)
+
+	# 接続の本数が敵の数と一致すること。1 体ずつ見るだけでは、宣言を 1 本消したときに
+	# 「その敵の接続が 0 件」としか読めず、本数の不足として観測できない
+	assert_int(declared_connections).append_failure_message(
+		"%d 体の敵に対して宣言された接続は %d 本" % [enemies.size(), declared_connections]
+	).is_equal(enemies.size())
 
 
 func test_every_enemy_targets_the_player_by_the_scene_declaration() -> void:
@@ -257,25 +374,31 @@ func test_the_player_death_is_wired_to_the_stage_by_the_scene_declaration() -> v
 	assert_bool(stage.has_method(DIED_HANDLER_NAME)).is_true()
 
 
-func test_the_stage_declares_the_pulse_scene() -> void:
-	var stage: AnalysisDevStage = _instantiate_stage() as AnalysisDevStage
-	assert_object(stage).is_not_null()
-
-	assert_object(stage.pulse_scene).is_not_null()
-
-
-func test_the_declared_pulse_scene_instantiates_an_analysis_pulse() -> void:
+func test_the_declared_fragment_scene_instantiates_an_analysis_fragment() -> void:
 	# 参照の中身まで見る: null でないことだけでは、別の `PackedScene` を差す誤りが素通りする
 	var stage: AnalysisDevStage = _instantiate_stage() as AnalysisDevStage
 	assert_object(stage).is_not_null()
-	assert_object(stage.pulse_scene).is_not_null()
-	if stage == null or stage.pulse_scene == null:
+	if stage == null:
+		return
+	assert_object(stage.fragment_scene).is_not_null()
+	if stage.fragment_scene == null:
 		return
 
-	var pulse: Node = auto_free(stage.pulse_scene.instantiate())
-	assert_bool(pulse is AnalysisPulse).append_failure_message(
-		"%s (%s)" % [pulse.name, pulse.get_class()]
+	var fragment: Node = auto_free(stage.fragment_scene.instantiate())
+	assert_bool(fragment is AnalysisFragment).append_failure_message(
+		"%s (%s)" % [fragment.name, fragment.get_class()]
 	).is_true()
+
+
+func test_the_stage_root_declares_exactly_one_packed_scene_export() -> void:
+	# 第 3 の枠の演出を差していた `pulse_scene` の消し残りを落とす。値ではなく宣言を数えるため、
+	# 値を外しただけの残骸もここに現れる
+	var stage := _instantiate_stage()
+
+	var exports: Array[String] = _packed_scene_export_names(stage)
+	assert_array(exports).append_failure_message(str(exports)).contains_exactly_in_any_order(
+		EXPECTED_ROOT_PACKED_SCENE_EXPORTS
+	)
 
 
 func test_every_terrain_body_carries_a_rectangle_shape_on_the_terrain_layer() -> void:
@@ -294,30 +417,54 @@ func test_every_terrain_body_carries_a_rectangle_shape_on_the_terrain_layer() ->
 		).is_true()
 
 
-func test_every_actor_stands_on_the_floor_between_the_walls() -> void:
+func test_every_actor_fits_inside_the_floor_horizontally() -> void:
+	# 水平方向だけを見るケース。垂直方向と 1 つにまとめると、床を横に縮める変異が
+	# 「立っている」の検査に隠れて素通りする
 	var stage := _instantiate_stage()
 	var floor_body: Node2D = stage.get_node(NodePath(FLOOR_NAME))
-	var floor_top: float = floor_body.global_position.y - _rect_size(floor_body).y * 0.5
+	var floor_visual: Rect2 = _visual_rect(floor_body)
 
-	var left_wall: Node2D = stage.get_node(NodePath(WALL_NAMES[0]))
-	var right_wall: Node2D = stage.get_node(NodePath(WALL_NAMES[1]))
-	var left_face: float = left_wall.global_position.x + _rect_size(left_wall).x * 0.5
-	var right_face: float = right_wall.global_position.x - _rect_size(right_wall).x * 0.5
+	# 見た目の床と当たりの床が重なっていること。ずれていると、この検査は実体と別のものを見る
+	assert_vector(floor_visual.position).append_failure_message(
+		"%s vs %s" % [floor_visual, _collision_rect(floor_body)]
+	).is_equal_approx(_collision_rect(floor_body).position, Vector2.ONE * POSITION_TOLERANCE)
+	assert_vector(floor_visual.size).is_equal_approx(
+		_collision_rect(floor_body).size, Vector2.ONE * POSITION_TOLERANCE
+	)
 
-	for actor_name: String in ACTOR_NAMES:
-		var actor: Node2D = stage.get_node(NodePath(actor_name))
-		var half_height: float = _rect_size(actor).y * 0.5
-		var half_width: float = _rect_size(actor).x * 0.5
+	var actors: Array[Node2D] = _actors_in(stage)
+	# 走査が空振りしていないこと(見る相手が 3 体居ること)
+	assert_int(actors.size()).is_equal(EXPECTED_ACTOR_COUNT)
+
+	for actor: Node2D in actors:
+		var visual: Rect2 = _visual_rect(actor)
+		assert_float(visual.position.x).append_failure_message(
+			"%s: %s は床 %s の左へはみ出す" % [actor.name, visual, floor_visual]
+		).is_greater_equal(floor_visual.position.x)
+		assert_float(visual.end.x).append_failure_message(
+			"%s: %s は床 %s の右へはみ出す" % [actor.name, visual, floor_visual]
+		).is_less_equal(floor_visual.end.x)
+
+
+func test_every_actor_stands_on_top_of_the_floor() -> void:
+	# 垂直方向だけを見るケース
+	var stage := _instantiate_stage()
+	var floor_body: Node2D = stage.get_node(NodePath(FLOOR_NAME))
+	var floor_top: float = _collision_rect(floor_body).position.y
+	var floor_visual_top: float = _visual_rect(floor_body).position.y
+
+	var actors: Array[Node2D] = _actors_in(stage)
+	assert_int(actors.size()).is_equal(EXPECTED_ACTOR_COUNT)
+
+	for actor: Node2D in actors:
 		# 床の上に立つこと。浮いていると重力で落ちてから戦いが始まり、初期位置の算術がずれる
-		assert_float(actor.global_position.y + half_height).append_failure_message(
-			actor_name
+		assert_float(_collision_rect(actor).end.y).append_failure_message(
+			str(actor.name)
 		).is_equal_approx(floor_top, POSITION_TOLERANCE)
-		assert_float(actor.global_position.x - half_width).append_failure_message(
-			actor_name
-		).is_greater(left_face)
-		assert_float(actor.global_position.x + half_width).append_failure_message(
-			actor_name
-		).is_less(right_face)
+		# 見た目も床へ沈まないこと。当たりだけを見ると、`ColorRect` を下へ伸ばす変異が残る
+		assert_float(_visual_rect(actor).end.y).append_failure_message(
+			"%s: %s は床 %f へ沈む" % [actor.name, _visual_rect(actor), floor_visual_top]
+		).is_less_equal(floor_visual_top + POSITION_TOLERANCE)
 
 
 func test_at_most_two_enemies_stand_inside_the_threat_ring() -> void:
@@ -361,6 +508,7 @@ func test_the_far_enemy_starts_outside_its_own_detect_range() -> void:
 		"%f vs %f" % [near_distance, far_distance]
 	).is_greater(near_distance)
 
+	# 閾値はその敵自身の索敵範囲から取る。テストへ距離の期待値を書き写さない
 	assert_float(far_distance).append_failure_message(
 		"%s は初期状態で索敵範囲の内側に居る" % far_enemy.name
 	).is_greater(far_enemy.stats.detect_range)
@@ -370,46 +518,34 @@ func test_the_far_enemy_starts_outside_its_own_detect_range() -> void:
 	).is_less_equal(near_enemy.stats.detect_range)
 
 
-func test_every_actor_starts_inside_the_base_resolution() -> void:
-	var stage := _instantiate_stage()
-	# 基準解像度はステージではなくプロジェクト設定が持つ。テストへ複製しない
-	var width: float = float(ProjectSettings.get_setting("display/window/size/viewport_width"))
-	var height: float = float(ProjectSettings.get_setting("display/window/size/viewport_height"))
-	assert_bool(width > 0.0 and height > 0.0).is_true()
-
-	for actor_name: String in ACTOR_NAMES:
-		var actor: Node2D = stage.get_node(NodePath(actor_name))
-		var half: Vector2 = _rect_size(actor) * 0.5
-		assert_bool(
-			(
-				actor.global_position.x - half.x >= 0.0
-				and actor.global_position.x + half.x <= width
-				and actor.global_position.y - half.y >= 0.0
-				and actor.global_position.y + half.y <= height
-			)
-		).append_failure_message("%s: %s" % [actor_name, actor.global_position]).is_true()
-
-
-func test_the_terrain_fits_the_base_resolution_in_width() -> void:
-	var stage := _instantiate_stage()
-	var width: float = float(ProjectSettings.get_setting("display/window/size/viewport_width"))
-	assert_bool(width > 0.0).is_true()
-
-	var terrain: Array[Node] = _terrain_bodies(stage)
-	assert_int(terrain.size()).is_equal(1 + WALL_NAMES.size())
-
+func test_the_stage_fits_the_base_resolution_in_width() -> void:
+	# 名前の一覧ではなく型で走査する: 名前で引くと、一覧に無い名前で置いたノードが素通りする。
 	# 幅だけを見る: 壁は画面の上端より高く伸びており、縦は基準解像度に収まらない
-	for body: Node in terrain:
-		var half_width: float = _rect_size(body).x * 0.5
-		var left: float = (body as Node2D).global_position.x - half_width
-		var right: float = (body as Node2D).global_position.x + half_width
-		assert_bool(left >= 0.0 and right <= width).append_failure_message(
-			"%s: %f..%f" % [body.name, left, right]
+	var stage := _instantiate_stage()
+	var width: float = _viewport_width()
+
+	var measured: int = 0
+	for node: Node in _nodes_of(stage):
+		var rect: Rect2 = Rect2()
+		if node is ColorRect:
+			rect = Rect2((node as ColorRect).global_position, (node as ColorRect).size)
+		elif node is CollisionShape2D and (node as CollisionShape2D).shape is RectangleShape2D:
+			var size: Vector2 = ((node as CollisionShape2D).shape as RectangleShape2D).size
+			rect = Rect2((node as CollisionShape2D).global_position - size * 0.5, size)
+		else:
+			continue
+		measured += 1
+		assert_bool(rect.position.x >= 0.0 and rect.end.x <= width).append_failure_message(
+			"%s: %f..%f (幅 %f)" % [node.name, rect.position.x, rect.end.x, width]
 		).is_true()
+
+	# 走査が空振りしていないこと。0 個を測っても「収まっている」は成立しない
+	assert_int(measured).is_greater(0)
 
 
 func test_the_stage_holds_no_camera() -> void:
-	# カメラを置かない(追従を前提にしない = 幅が基準解像度に収まっていることの対)
+	# カメラを置かない(追従を前提にしない = 幅が基準解像度に収まっていることの対)。
+	# 名前ではなく型で見る
 	var stage := _instantiate_stage()
 
 	for node: Node in _nodes_of(stage):
@@ -431,7 +567,7 @@ func test_the_stage_holds_no_spawner() -> void:
 		).is_false()
 
 	# シーンのどこかが敵のシーンを参照していれば、動的に出す口になる。
-	# 参照してよい PackedScene は弾と解析の演出だけであること
+	# 参照してよい PackedScene は弾と断片だけであること
 	var packed_scene_properties: Array[String] = []
 	for node: Node in nodes:
 		for property: Dictionary in node.get_property_list():
@@ -466,3 +602,13 @@ func test_no_enemy_appears_while_the_stage_runs() -> void:
 	assert_int(_enemies_in_the_whole_tree().size()).append_failure_message(
 		"%d フレームで木の中の敵の数が %d から変わった" % [frames, before]
 	).is_equal(before)
+
+
+func test_the_same_scan_finds_nodes_nested_below_the_root() -> void:
+	# 走査が常に空を返す変異を落とす対。孫の位置に置いて再帰そのものも観測する
+	var stub: Node2D = auto_free(Node2D.new())
+	var branch: Node2D = Node2D.new()
+	stub.add_child(branch)
+	branch.add_child(ColorRect.new())
+
+	assert_int(_nodes_of(stub).size()).is_equal(3)
