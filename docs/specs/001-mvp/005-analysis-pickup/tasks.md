@@ -454,6 +454,90 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 差分が見つかった場合は、その差分が本単位の計画に含まれるかを「凍結の正本」の表と照合する。含まれないなら**戻さずに報告する**(意図せぬ変更の原因を人間が判断する)
     - 検証コマンド: `make test`、`git diff --stat 01c1d0e`
 
+- [ ] 8. 最終検証パネルの NO-GO の解消(dev-implement 14. の修正タスク)
+
+  2026-08-22 の最終検証パネルが返した `[Critical]` 5 件を閉じる。**人間の承認済みの範囲**は「テストのケース追加 4 件 + 実装 1 行の遅延化 1 件」であり、`spec.md` は変更しない・凍結済み文書は変更しない・unit #1〜#3 のテストは変更しない・拡散の角度と弾数と威力は調整しない。指摘の本文は `## Implementation Notes` の `### 最終検証パネルの結果(2026-08-22)— NO-GO` にある。
+
+  **1 サブタスク = 1 コミット**とする(打ち切りで失う範囲を限るため)。各サブタスクは、修正前に変異を仕掛けて生存を実測し、修正後に同じ変異で死亡することを実測して `## Implementation Notes` へ記録する(規律の正本は本ファイルの「全タスク共通の実装の規律」)。
+
+  - [ ] 8.1 `Player` のスクリプト変数をちょうどの個数で固定する(C1)
+    _Requirements: 3.9_
+    _Boundary: Player_
+    _Depends: 7.1_
+    - 対象ファイル: `tests/player/player_upgrade_test.gd`(変更。ケースと定数の追加のみ。既存ケースを弱めない)
+    - 仕様参照: spec.md §6.2「主武器の強化の状態(`Player`)」、§7 Requirement 3(3.9)
+    - 実装の要点(タスク固有):
+      - 現状の 3.9 の検査は名前の拒否リスト(13 語)と `upgrad` を含む項目の型しか見ておらず、リストに当たらない名前の状態(例: 残り回数)を素通りする
+      - **同スイートが 3.8 で既に使っている「ちょうどの個数」の形**(`_script_variables(command).size()` を定数と突き合わせる)を `Player` へ適用する。ヘルパ `_script_variables()` は同スイートに実在する
+      - `Player` のスクリプト変数は 10 個である(`stats`・`projectile_scene`・`upgraded_secondary_tint`・`health`・`facing`・`is_primary_upgraded`・`input_source`・`_is_primary_upgraded`・`_primary_weapon`・`_secondary_weapon`)。**期待する名前の集合も並びとして固定する**: 個数だけだと、1 つ消して 1 つ足す変異が素通りする
+      - 名前の拒否リストの検査は**残す**(個数の検査と目的が違う。既存の項目を残り回数つきの意味へ改名する変異は個数では落ちない)
+      - 変異で確かめる(規律): `src/player/player.gd` へ `var _burst_budget: int = 999` を足すと落ちること。修正前は `make test` が緑のまま生存することも先に実測する
+    - 検証コマンド: `make test TESTS=res://tests/player`
+
+  - [ ] 8.2 `PlayerStats` の項目数と `ability_*` の不在を新設スイートで固定する(C2)
+    _Requirements: 10.4, 10.5, 10.6_
+    _Boundary: PlayerStats_
+    _Depends: 7.1_
+    - 対象ファイル: `tests/player/player_stats_removal_test.gd`(新規。`.uid` と対でステージする)
+    - 仕様参照: spec.md §6.5「`PlayerStats`(unit #2 §6.1 の 14 項目へ戻す)」、§7 Requirement 10(10.4・10.5・10.6)
+    - 実装の要点(タスク固有):
+      - **凍結済みの `tests/player/player_stats_test.gd` を改訂しない**(要件 11.9・11.11)。`tests/weapon/projectile_direction_test.gd` と同じ手段で、同じディレクトリへ別のスイートを足す(追加は 11.9 の禁じる「変更」に当たらない)
+      - 10.5 は `@export`(`PROPERTY_USAGE_EDITOR` かつ `PROPERTY_USAGE_SCRIPT_VARIABLE`)の項目が **14 個ちょうど**であることと、その並びが unit #2 の 14 項目と一致することで見る。凍結スイートの `contains()` は非排他であり、15 個目を足す変異を素通りする
+      - 10.6 は `src/` 配下の `.gd`・`.tscn`・`.tres` を走査し、9 語(`AbilitySlot`・`AnalysisPulse`・`ability_slot`・`ability_uses`・`ability_cooldown`・`ability_damage`・`ability_bullet_speed`・`ability_fired`・`grant_ability`)が 1 件も現れないことで見る。**現状はリポジトリ内に自動の検査が無く、実装時の 1 度の grep にしか依存していない**
+      - **走査が空振りしていないことを陽性対照で固定する**(規律)。走査したファイルが 0 件でないこと、および必ず存在する語(`PlayerStats`)が 1 件以上見つかることを同じ走査で確かめる。空振りのまま緑になると、検査が何も見ていない
+      - 10.4 は削除した 4 項目(`ability_uses`・`ability_cooldown`・`ability_damage`・`ability_bullet_speed`)が `PlayerStats` の項目に無いことで見る(10.5 の並びの一致と対で置く)
+      - 走査の対象に `tests/` を含めない: このスイート自身が 9 語を字面で持つため、自己成就で落ちる
+      - 変異で確かめる(規律): `src/player/player_stats.gd` の末尾へ `@export var ability_uses: int = 3` を足すと落ちること(10.5 と 10.6 の両方が落ちる)
+    - 検証コマンド: `make test TESTS=res://tests/player`
+
+  - [ ] 8.3 境界のすぐ外の向きを拒否しないことを固定する(C3)
+    _Requirements: 2.6_
+    _Boundary: Projectile_
+    _Depends: 7.1_
+    - 対象ファイル: `tests/weapon/projectile_direction_test.gd`(変更。定数とケースの追加のみ)
+    - 仕様参照: spec.md §5.2「`Projectile`」、§7 Requirement 2(2.6)
+    - 実装の要点(タスク固有):
+      - 現状の `UNNORMALIZED_DIRECTIONS` は `Vector2(0.3, 0.0)`・`Vector2(3.0, 1.0)` の 2 件で、どちらも `CMP_EPSILON`(1e-5)より十分大きい。**境界のすぐ外の値を 1 つも置いていない**(規律 6)
+      - `Vector2(0.000001, 0.0)` を足す。この値は `Vector2.ZERO` と等しくないが `is_zero_approx()` は真を返すため、ガードを `is_zero_approx()` へ変える変異がここで落ちる(パネルが隔離複製で実測済み)
+      - **境界のすぐ外であること自体を番人のケースで固定する**: `is_zero_approx()` が真であり、かつ `== Vector2.ZERO` が偽であることを見る。定数を大きな値へ書き換える変更はここで気付く
+      - `_assert_travelled_along()` は `direction.normalized()` を期待値に使うため、極小の向きでも進んだ向きまで見られる(`Vector2(0.000001, 0.0).normalized()` は `(1, 0)`。実測済み)
+      - 変異で確かめる(規律): `src/weapon/projectile.gd` の `if direction == Vector2.ZERO:` を `if direction.is_zero_approx():` へ変えると落ちること
+    - 検証コマンド: `make test TESTS=res://tests/weapon`
+
+  - [ ] 8.4 `fired` のシグナル宣言を読む検査を置く(C4)
+    _Requirements: 11.3_
+    _Boundary: Player_
+    _Depends: 7.1_
+    - 対象ファイル: `tests/player/player_upgrade_test.gd`(変更。ケースと定数の追加のみ)
+    - 仕様参照: spec.md §5.3「`Player`」、§7 Requirement 11(11.3)、本ファイルの「凍結の正本」の表の 11.3 の行
+    - 実装の要点(タスク固有):
+      - GDScript はシグナルの宣言型を発火時に強制しないため、**振る舞い側のケースは値の型しか観測できない**。宣言を `direction: Vector2` へ変える変異は全体緑のまま生存する(パネルが実測)
+      - `Object.get_signal_list()` の `fired` の要素は `args` に宣言どおりの `name` と `type` を持つ(`direction` が `TYPE_VECTOR2I`、`is_secondary` が `TYPE_BOOL`。実測済み)。これを読むケースを置く
+      - 引数の**名前・型・並び・個数**の 4 つを固定する(個数を見ないと、3 つ目を足す変異が素通りする)
+      - 同スイートは既に `[input]` 節の sha256 で凍結の検査を持っており、置き場として整合する
+      - 実装の宣言行を文字列として読む形は採らない: 型を検査したいのであって字面ではなく、`get_signal_list()` のほうが空白・書式の揺れに強い
+      - 変異で確かめる(規律): `src/player/player.gd:11` の `direction: Vector2i` を `direction: Vector2` へ変えると落ちること。`is_secondary: bool` を `int` へ変えても落ちること
+    - 検証コマンド: `make test TESTS=res://tests/player`
+
+  - [ ] 8.5 断片の追加を遅らせ、テストを遅延の後の観測へ改める(C5)
+    _Requirements: 8.1, 8.2, 8.3_
+    _Boundary: AnalysisDevStage_
+    _Depends: 7.1_
+    - 対象ファイル: `src/stage/analysis_dev_stage.gd`(変更), `tests/stage/analysis_dev_stage_test.gd`(変更)
+    - 仕様参照: spec.md §5.6「`AnalysisDevStage`」、§7 Requirement 8(8.1・8.2・8.3)
+    - 実装の要点(タスク固有):
+      - 実機では写せる種別の撃破のたびに `ERROR: Can't change this state while flushing queries.` が 1 回出る(8/8 回で再現)。`defeated` は `Hurtbox.body_entered` から届くため、ハンドラは**物理コールバックの最中に走る**。そこで `Area2D` を木へ載せると、走査の最中に監視の状態を変えることになる
+      - **`spec.md` §5.6 と要件 8.1・8.3 は追加の時期を定めていない**。定めているのは「ステージ自身の子として追加してから位置を置く」という順序であり、遅延して追加しても判定内容は変わらない。**したがって契約の変更に当たらない**(人間の確定済みの判断)
+      - 同じファイルの `_on_player_died()` が同一の危険を理由に既に `call_deferred` を採っている。**同じ対処を採るのがプロジェクト自身の規律と整合する**
+      - **位置は遅延の前に読む**: 撃破された敵は `defeated` の直後に `queue_free()` されるため、遅延した先で `enemy.global_position` を読める保証が無い。撃破時点の値が要件 8.2 の言う「撃破された敵の `global_position`」である
+      - **生成も遅延の中で行う**: ステージがこのフレームで解放された場合、遅延した呼び出しは丸ごと捨てられ、木に載らない断片が孤児として残らない(`orphans` を 0 に保つ。要件 10.10)
+      - **`push_error`(要件 8.9)は同期のまま**にする: `fragment_scene` の未設定はハンドラの呼び出しの中で報せる。遅らせると `assert_error()` の窓の外へ出る
+      - `src/stage/analysis_dev_stage.gd` に `EnemyKind` の語と `PICKUP_SYMBOLS`(`_player(`・`Player`・`grant_upgrade`・`grant_ability`)を書かない(既存の静的検査が禁じている)
+      - テストは 8.1・8.3 を「遅延の後に子が 1 つ増える」形へ改める。**あわせて「ハンドラ自身の呼び出しの中では増えない」ことを直接観測するケースを 1 本置く**(`test_the_handler_runs_no_reload_inside_its_own_call` と同型。これが無いと同期の追加へ戻す変異が落ちない)
+      - 断片が出ないことを見る側のケース(8.4・8.9・8.10)も**遅延の後まで見る**: 同期の時点だけを見ると、遅れて出る実装を「出ない」と誤って読む
+      - 変異で確かめる(規律): 遅延を同期の `add_child()` へ戻すと落ちること。位置の読み取りを遅延の中へ移すと落ちること(敵が解放済みで読めない)
+    - 検証コマンド: `make test TESTS=res://tests/stage`、`make test`、`godot --path . res://src/stage/analysis_dev_stage.tscn`(GUI。`ERROR` が 0 件であること)
+
 ## Implementation Notes
 
 ### 注入した知識 port
