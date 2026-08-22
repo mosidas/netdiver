@@ -1224,3 +1224,35 @@ spec.md §8 が定める反映先 3 つの確認結果:
 - **`analysis_dev_stage.gd` のコメント記号の不揃い**(structure)。非公開のシグナルハンドラのうち `_on_enemy_defeated()` だけが `##`、`_place_fragment()` と `_on_player_died()` は `#`。
 - **`AnalysisFragment` の `has_method(&"grant_upgrade")` が引数の数を見ない**(security)。同名で引数を要求するメソッドを持つ body が player レイヤへ載ると引数不足のエンジンエラーになる。現在 player レイヤに載るのは `player.tscn` だけであり悪用経路は無い。
 - **`_source_paths_under()` の再帰に深さの上限とリンクの巡回検出が無い**(security)。`src/`・`tests/` にシンボリックリンクは 0 件であることを実測済み。
+
+### タスク 9(2 回目の NO-GO の解消 — S1・S2)
+
+人間の判断により、structure が返した Critical 2 件を両方直す。1 件 = 1 コミット。
+
+#### S1 — 理由コメントの付け替え(`f3754f2`)
+
+`tests/player/player_upgrade_test.gd` の 58-61 行(`PLAYER_SCRIPT_VARIABLES` の理由)を 71 行の直上へ移し、`FROZEN_FIRED_ARGUMENTS` には 62-64 行(`fired` の引数の理由)だけを残した。あわせて、隣接しなくなった `FORBIDDEN_STATE_TOKENS` への言及を「上の名前の拒否リスト」から定数名そのものへ改めた。**位置に依存する指示語は、また同じ割り込みで壊れる**ためである。
+
+#### S2 — 中間生成物の ID の除去(`706b582`)
+
+**対象の数え直しで、人間へ報告した「本単位が持ち込んだのは 1 行」は誤りだったことが分かった。** 中継役の計測は `要件 [0-9]` の形だけを数えており、**節番号(`§6.2`)・文書名つきの節(`spec.md §7`)・unit 番号(`unit #4`)の形を数えていなかった**。パネルが挙げた 5 箇所は**いずれも本単位が持ち込んだ追加行**である。
+
+```
+git diff 01c1d0e -- src tests | grep '^+' | grep "§\|要件 [0-9]\|unit #\|spec\.md\|tasks\.md"
+  修正前 5 件 / 修正後 0 件
+```
+
+| 箇所 | 元の参照 | 扱い |
+| ---- | ---- | ---- |
+| `tests/player/player_upgrade_test.gd` `COMMAND_FIELD_COUNT` | `要件 3.8` | 何を固定しているのかを言葉で書き、`FROZEN_INPUT_ACTIONS` と対である理由を足した |
+| `tests/player/player_upgrade_test.gd` `test_the_upgrade_state_is_a_single_bool()` | `§6.2 が言う状態` | 「強化の種類・残り回数・残り時間」と直接書いた |
+| `tests/ability/spread_resolver_test.gd` `test_spread_degrees_is_twenty()` | `spec.md §7 の「検証の形式」` | 「ほかのケースは解決した向きの側から見る」と、この 1 件だけが例外である事実を書いた |
+| `tests/ability/analysis_fragment_scene_test.gd` `_instantiate()` | `spec.md §7 の検証の形式` | 参照を落とすだけで残りが単体で読める |
+| `tests/stage/analysis_dev_stage_scene_test.gd` `test_every_actor_fits_inside_the_floor_horizontally()` | `unit #4 の [Nit]` | 同上 |
+
+いずれも凍結対象外のファイルである(要件 11.9 と「凍結の正本」の表のどれにも当たらない)。**ID を消すだけに留めず、その定数・その分岐が何を固定しているのかが単体で読める形にした**(消すだけだと理由が痩せ、次の読み手が「なぜこの数か」を復元できない)。
+
+#### 別単位へ申し送る事項(本単位では触らない)
+
+- **基線由来の中間生成物 ID の一掃**。`01c1d0e` 時点から存在し、本単位が 1 行も触っていない箇所が 11 ファイルにある。うち `tests/enemy/shooter_enemy_test.gd`(3 箇所)・`tests/weapon/enemy_projectile_test.gd`・`tests/weapon/combat_limits_test.gd`・`tests/enemy/charger_enemy_test.gd`・`tests/stage/enemy_dev_stage_test.gd`(2 箇所)・`tests/player/player_input_test.gd`・`src/enemy/charger_enemy.gd` は**要件 11.9 が変更を禁じており、本単位では直せない**。凍結の制約が外れる単位でまとめて一掃すること。**同じ判定が単位をまたいで再発する**(1 回目のパネルは `[Nit]`、2 回目は `[Critical]` と割れた)ため、一掃の前に「新規コードだけに掛けるのか、凍結側との一貫性を優先するのか」を規律の側で決めておく。
+- **`ZERO_DIRECTION_ERROR` の文言の訂正**(1 回目・2 回目のパネルが共通で返した DRIFT の 2 番目)。
