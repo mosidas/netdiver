@@ -65,6 +65,20 @@ const SCAN_ANCHORS: Array[String] = [
 
 const SCANNED_EXTENSIONS: PackedStringArray = ["gd", "tscn", "tres"]
 
+# 実装の文言を参照しない: 参照するとアサーションが自明になり、文言の退行を検出できない
+const INVALID_STAT_ERROR_FORMAT: String = "Player: stats.%s は正でなければならない(現在値: %s)"
+
+# 実装が名前で持ちようのない項目。`PlayerStats` へ項目が増えた状況をテストの中だけで作る
+const UNKNOWN_STAT_NAME: String = "unknown_stat"
+
+
+## 項目が 1 つ増えた `PlayerStats`。`Player` が検査の対象を名前で並べて持っていると、
+## この派生型の項目は検査から漏れる
+class ExtendedStats:
+	extends PlayerStats
+
+	@export var unknown_stat: float = 1.0
+
 
 func _editor_visible_property_names(object: Object) -> Array[String]:
 	var names: Array[String] = []
@@ -105,6 +119,21 @@ func test_the_stats_hold_none_of_the_removed_items() -> void:
 
 	for removed_name: String in REMOVED_STAT_NAMES:
 		assert_array(names).append_failure_message(removed_name).not_contains([removed_name])
+
+
+# 項目を減らしても、`Player` が「全数値項目に正を課す」規律まで痩せてはならない。実装が
+# 対象を `get_property_list()` から導いていることを、実装が名前で持ちようのない項目で示す。
+# 14 項目を名前で並べただけの検査に書き換える変異は、このケースだけが落とす。
+# このスイートに置く: 撤去の前は 4 項目を検証していたスイートが同じ形を持っており、その
+# スイートごと消したためここが唯一の置き場になった(凍結側の既存スイートは改訂できない)
+func test_the_stat_check_reaches_an_item_the_implementation_cannot_know_by_name() -> void:
+	var stats: ExtendedStats = auto_free(ExtendedStats.new())
+	stats.unknown_stat = 0.0
+	var player: Player = auto_free(Player.new())
+	player.stats = stats
+	var expected: String = INVALID_STAT_ERROR_FORMAT % [UNKNOWN_STAT_NAME, stats.unknown_stat]
+
+	await assert_error(func() -> void: add_child(player)).is_push_error(expected)
 
 
 func test_the_scan_reaches_every_source_directory() -> void:
