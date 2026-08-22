@@ -69,7 +69,7 @@ func _instantiate(path: String) -> Node:
 	var scene: PackedScene = load(path)
 	assert_object(scene).append_failure_message(path).is_not_null()
 	# ツリーへ載せない: `add_child()` すると `_ready()` と `_physics_process` が走り、
-	# 構成ではなく動いた後の姿を見ることになる(spec.md §7 の検証の形式)
+	# 構成ではなく動いた後の姿を見ることになる
 	var root: Node = auto_free(scene.instantiate())
 	assert_object(root).append_failure_message(path).is_not_null()
 	return root

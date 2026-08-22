@@ -196,7 +196,7 @@ func test_resolve_never_returns_the_zero_vector() -> void:
 
 
 func test_spread_degrees_is_twenty() -> void:
-	# 値そのものを検査の対象として読む唯一のケース(spec.md §7 の「検証の形式」)
+	# 定数の値そのものを読む唯一のケース。ほかのケースは解決した向きの側から見る
 	assert_float(SpreadResolver.SPREAD_DEGREES).is_equal(20.0)
 
 

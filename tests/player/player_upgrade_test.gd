@@ -18,7 +18,10 @@ const WAIT_MILLIS: int = 500
 # 待ちの中で最低限消化していてほしいフレーム数
 const MIN_FRAMES: int = 10
 
-# `PlayerCommand` の項目数(要件 3.8)。強化のための入力を足すとここが増える
+# `PlayerCommand` の項目数。強化の取得・発動をプレイヤーの操作で行う形(専用の入力を
+# 1 つ足す等)を持ち込むとここが増えるため、個数を固定して「入力を増やさない」を塞ぐ。
+# `FROZEN_INPUT_ACTIONS` と対で置く: アクション側だけでは、既存のアクションを読み替えて
+# `PlayerCommand` へ項目を足す形が素通りする
 const COMMAND_FIELD_COUNT: int = 5
 
 # `project.godot` の `[input]` が定義していなければならないアクション。これがちょうどの集合である
@@ -267,8 +270,9 @@ func test_the_upgrade_state_is_a_single_bool() -> void:
 			if property_name.to_lower().contains(token):
 				offending_names.append(property_name)
 				break
-		# インスペクタへ出る項目を除く: `@export` は設定値・見え方であって §6.2 が言う状態ではない。
-		# 残り回数・残り時間を `@export` で持ち込む形は上の語の検査が捕らえる
+		# インスペクタへ出る項目を除く: `@export` は設定値・見え方であって、ここで禁じている
+		# 「強化の種類・残り回数・残り時間」の状態ではない。残り回数・残り時間を `@export` で
+		# 持ち込む形は上の語の検査が捕らえる
 		if int(property["usage"]) & PROPERTY_USAGE_EDITOR != 0:
 			continue
 		if property_name.contains("upgrad") and int(property["type"]) != TYPE_BOOL:

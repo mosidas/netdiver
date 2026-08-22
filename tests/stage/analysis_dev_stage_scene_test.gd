@@ -419,7 +419,7 @@ func test_every_terrain_body_carries_a_rectangle_shape_on_the_terrain_layer() ->
 
 func test_every_actor_fits_inside_the_floor_horizontally() -> void:
 	# 水平方向だけを見るケース。垂直方向と 1 つにまとめると、床を横に縮める変異が
-	# 「立っている」の検査に隠れて素通りする(unit #4 の [Nit])
+	# 「立っている」の検査に隠れて素通りする
 	var stage := _instantiate_stage()
 	var floor_body: Node2D = stage.get_node(NodePath(FLOOR_NAME))
 	var floor_visual: Rect2 = _visual_rect(floor_body)
