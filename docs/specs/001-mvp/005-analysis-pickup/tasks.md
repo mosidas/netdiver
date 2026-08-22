@@ -1115,3 +1115,47 @@ spec.md §8 が定める反映先 3 つの確認結果:
 - **断片の 8×8 は敵の 16×16 の 1/4 の面積で、320×180 の等倍では小さい**(runtime-smoke)。spec.md §5.4 のとおりであり情報提供に留まる。
 - **gdUnit4 の取得がアーカイブの sha256 を固定していない / CI に `permissions:` の明示が無い / action がタグ参照**(security)。いずれも既存事項であり、**本単位は `scripts/`・`.github/`・`.claude/`・`project.godot`・`addons/` を 1 行も変更していない**。別の作業単位として起票する価値はある。
 
+
+### タスク 8 の修正の実測(NO-GO の解消)
+
+**いつ**: 2026-08-22。**どこで**: 元の作業ツリー(変異は `cp` で退避・復元し、復元のたびに sha256 で基線値との一致を確認した)。C5 の実行時の観測だけは `rsync` の複製 `/tmp/nv-c5` で行い、作業ツリーは変えていない。
+
+| # | 要件 | 手段 | 変異 | 修正前 | 修正後 |
+| -- | -- | -- | -- | -- | -- |
+| C1 | 3.9 | `player_upgrade_test.gd` にスクリプト変数のちょうどの集合を置く | `_burst_budget` を足し `grant_upgrade()` で戻し `_spawn_spread()` で減らす | 553 cases / failures 0 / exit 0(**生存**) | 1 failures / exit 100(**死亡**) |
+| C2 | 10.4・10.5・10.6 | 新設 `player_stats_removal_test.gd` に排他的な 4 ケース | `player_stats.gd` へ `@export var ability_uses: int = 3` | 554 cases / failures 0 / exit 0(**生存**) | 3 failures / exit 100(**死亡**) |
+| C3 | 2.6 | `projectile_direction_test.gd` に境界のすぐ外の向き 1 件と番人 1 ケース | `direction == Vector2.ZERO` → `direction.is_zero_approx()` | 84 cases / failures 0 / exit 0(**生存**) | 1 failures / exit 100(**死亡**) |
+| C4 | 11.3 | `player_upgrade_test.gd` に `get_signal_list()` を読むケース | `signal fired` の `direction: Vector2i` → `Vector2` | 559 cases / 36 suites / failures 0 / exit 0(**生存**) | 1 failures / exit 100(**死亡**) |
+| C4 | 11.3 | 同上 | 同 `is_secondary: bool` → `int` | (未計測。上と同種) | 1 failures / exit 100(**死亡**) |
+| C5 | 8.1・8.2・8.3 | `add_child` の遅延化 + テスト 9 ケースを遅延後の観測へ + 2 ケース追加 | 同期の `add_child()` へ戻す | (修正前は実装そのもの) | 2 failures / exit 100(**死亡**) |
+| C5 | 8.2 | 同上 | 位置の読み取りを遅延の中へ移す | — | 1 errors / 1 failures / exit 100(**死亡**) |
+
+#### C5 の実行時の実測(headless で再現できた)
+
+前のターンは GUI + 台本入力 + PNG の書き出しで観測したが、この ERROR は物理サーバ由来であり **`--headless` でも同じ 1 件が出る**。手順を軽くできた。
+
+1. `rsync -a --exclude .git --exclude reports --exclude .godot ./ /tmp/nv-c5/`
+2. 複製の側にだけオートロード `c5_probe.gd` を置く(`project.godot` の `[autoload]` へ 1 行)。中身は「`current_scene` の `Player` の `input_source` を毎物理フレーム `primary_held = true` を返す `Callable` へ差し替え、200 物理フレームで断片の数を print して `quit()`」だけである
+3. `godot --headless --path /tmp/nv-c5 --import`(クラスキャッシュの生成。これを飛ばすとパースエラーになる)
+4. `godot --headless --path /tmp/nv-c5 res://src/stage/analysis_dev_stage.tscn` の標準出力・標準エラーを保存し、`grep -c '^ERROR'` を数える
+
+- **修正前**: `^ERROR` が **1 件**。文言・`at:`・バックトレース(`_on_enemy_defeated` ← `take_damage` ← `_on_area_entered`)はパネルの報告と完全に一致した。`PROBE fragments=1`(断片は正しく出ている)。
+- **修正後**: headless 4 回・GUI 1 回のすべてで `^ERROR` が **0 件**、`PROBE fragments=1`。GUI の側に出る `IMKCFRunLoopWakeUpReliable` の行は macOS の入力メソッドの通知であり Godot の `ERROR` ではない。
+
+#### C5 で「位置をいつ読むか」を選んだ理由(実測を伴う)
+
+**撃破の時点で読み、遅延した呼び出しへは `Vector2` を渡す**形を採った。理由は 3 つある。
+
+1. 撃破された敵は `defeated.emit()` の直後に `queue_free()` される(`src/enemy/enemy.gd`)。遅延した先で同じ相手を解決できる保証が無い。
+2. **保証が無いだけで、実際には解決できてしまう**。`queue_free()` の削除待ち行列が流れる時期と `call_deferred` の呼び出しが流れる時期の前後関係はエンジンの実装の詳細であり、実測でも遅延の中で `get_node(enemy_path).global_position` を読む変異は**同じフレームでは読めてしまい生存した**。この前後関係に依存する形は、契約ではなく偶然に乗っている。
+3. 要件 8.2 が言う「撃破された敵の `global_position`」は**撃破の時点の値**である。後から読む形は、意味の上でも一段ずれる。
+
+そのため、2. の変異を落とすテストは「敵が解放済みである」ことではなく「**敵をステージから外した後でも断片が正しい位置に出る**」ことで書いた(`test_the_fragment_appears_at_the_position_read_when_the_defeat_arrived`)。`queue_free()` で書くと 2. のとおり変異が生き残り、検査が成立しない。
+
+#### タスク 8 の学習
+
+- **「凍結しているから塞げない」は、既存スイートの改訂に限った話である。** C1・C2・C4 はいずれも既存スイートを 1 行も変えずに閉じた(C1・C4 は本単位が新設したスイートへの追加、C2 は新設スイート)。凍結の対象は**そのファイル**であって**その要件**ではない。
+- **有限性は排他的な検査の根拠になる。** `Player` のスクリプト変数も `PlayerStats` の `@export` も有限であり、「ちょうどこの集合」と書ける。名前の拒否リストは、リストに載っていない名前を必ず素通りさせる。両方を置く(集合の一致は改名を落とさず、拒否リストは追加を落とさない)。
+- **静的な走査には空振りの検査を 2 段で足す。** 走査が届いていること(ディレクトリごとの錨)と、必ず見つかる語が見つかること(陽性対照)。総数だけを見ると、再帰が途中で止まっていても緑になる。
+- **GDScript のシグナルは宣言型を発火時に強制しない。** 宣言の凍結は `get_signal_list()` の `args` を読むほかない。振る舞い側のケースをいくら足しても宣言の退行は捕らえられない。
+- **実行時のエラーは headless でも観測できることがある。** 物理サーバ・レンダリングサーバのうち、物理サーバ由来のものは `--headless` で再現する。GUI と台本入力と画面の保存が要るのは、見え方(色・配置)を確かめるときだけである。
