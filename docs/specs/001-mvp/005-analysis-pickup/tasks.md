@@ -474,7 +474,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 変異で確かめる(規律): `src/player/player.gd` へ `var _burst_budget: int = 999` を足すと落ちること。修正前は `make test` が緑のまま生存することも先に実測する
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-  - [ ] 8.2 `PlayerStats` の項目数と `ability_*` の不在を新設スイートで固定する(C2)
+  - [x] 8.2 `PlayerStats` の項目数と `ability_*` の不在を新設スイートで固定する(C2)
     _Requirements: 10.4, 10.5, 10.6_
     _Boundary: PlayerStats_
     _Depends: 7.1_
