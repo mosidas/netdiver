@@ -1256,3 +1256,69 @@ git diff 01c1d0e -- src tests | grep '^+' | grep "§\|要件 [0-9]\|unit #\|spec
 
 - **基線由来の中間生成物 ID の一掃**。`01c1d0e` 時点から存在し、本単位が 1 行も触っていない箇所が 11 ファイルにある。うち `tests/enemy/shooter_enemy_test.gd`(3 箇所)・`tests/weapon/enemy_projectile_test.gd`・`tests/weapon/combat_limits_test.gd`・`tests/enemy/charger_enemy_test.gd`・`tests/stage/enemy_dev_stage_test.gd`(2 箇所)・`tests/player/player_input_test.gd`・`src/enemy/charger_enemy.gd` は**要件 11.9 が変更を禁じており、本単位では直せない**。凍結の制約が外れる単位でまとめて一掃すること。**同じ判定が単位をまたいで再発する**(1 回目のパネルは `[Nit]`、2 回目は `[Critical]` と割れた)ため、一掃の前に「新規コードだけに掛けるのか、凍結側との一貫性を優先するのか」を規律の側で決めておく。
 - **`ZERO_DIRECTION_ERROR` の文言の訂正**(1 回目・2 回目のパネルが共通で返した DRIFT の 2 番目)。
+
+### 最終検証パネルの再実行(2026-08-22、3 回目)— **NO-GO**
+
+事前ゲート通過。`check.py` は **error 0 / warning 8**(行数超過 3 + 記録の本文に現れる `UNVERIFIED` の語 5)。パネル実行前の `make test` は **562 cases / 36 suites / 全 0 / exit 0**。体ごとに隔離複製(`/tmp/nv-panel3/{reqconf,security,test,runtime,structure}`)を用意し、5 観点を並列で投入した。
+
+| 観点 | VERDICT | Critical | UNVERIFIED | 2 回目からの変化 |
+| ---- | ---- | ---- | ---- | ---- |
+| requirements-conformance | APPROVED | 0 | なし | 据え置き |
+| security | APPROVED | 0 | なし | 据え置き |
+| **structure** | **APPROVED** | **0** | なし | **REJECTED / 2 → APPROVED / 0**(S1・S2 の解消を独立に実測) |
+| runtime-smoke | APPROVED | 0 | なし | 据え置き |
+| **test** | **REJECTED** | **1** | なし | **APPROVED / 0 → REJECTED / 1**(変異検査を 70 件 → 71 件へ広げて新たに検出) |
+
+**merge の判定**: 1 観点でも `REJECTED` なら全体 NO-GO により **NO-GO**。**S1・S2 は閉じた**が、test が新しく 1 件を返した。
+
+#### S1・S2 の解消(structure の独立の実測)
+
+- **S1**: 変更・追加された `.gd` 全件に対し「コメント塊 → 空行 → 宣言」で、塊が引用する定数名と直下の宣言名が食い違う箇所を機械的に走査し **0 件**。
+- **S2**: `git diff 01c1d0e..HEAD -- src tests | grep '^+' | grep -E "§|要件 [0-9]|unit #|spec\.md|tasks\.md|タスク [0-9]"` が **0 件**。
+
+#### 変異検査の実測(test 観点 / 71 件 — 死亡 69・生存 2)
+
+1 回目 30 件(死亡 25・生存 5)→ 2 回目 70 件(死亡 67・生存 3)→ 3 回目 **71 件(死亡 69・生存 2)**。生存 2 件のうち 1 件は等価変異、1 件が下の Critical である。
+
+- **H1(5.7、等価)**: `is_secondary and _is_primary_upgraded` → `_is_primary_upgraded`。強化中の主武器は `_spawn_spread()` を通り当該分岐へ到達しない。到達可能側から否定する H5(拡散弾へ tint を掛ける)は死亡する。2 回目の M03 と同じ所見を独立に再確認。
+- **O1(検出力の欠陥)**: 下記。
+- 2 回目に生存した M13(1.11 の許可集合)・M57(7.16 の `time_scale`)は、3 回目では D3・M6 として**死亡**した(変異の作り方を変えたため)。M57 の値依存の弱さそのものは `[Nit]` として残る。
+
+#### test が返した Critical 1 件と、その修正(`0c395c8`)
+
+**O1 — 撤去した回帰検査の穴埋めがされていない。**
+`Player._report_non_positive_stats()` は検査の対象を `stats.get_property_list()` から導いており、これは spec.md §6.5 が本単位の不変条件として名指す振る舞いである。これを 14 項目の固定リストの走査へ書き換える変異が、**全 562 ケース緑のまま生存した**(exit 0)。等価変異ではない — `stats` は `@export` の差し替え点であり、`PlayerStats` を継承して数値項目を 1 つ足せば観測差が出る。
+
+固定していた**リポジトリ内で唯一のケース** `tests/player/player_ability_stats_test.gd::test_ready_checks_an_ability_stat_the_implementation_cannot_know_by_name` を、要件 10.7 に従って `c4b5534` がスイートごと削除したために生じた。
+
+**本ファイルのタスク 3.5 の記録(「要件 10.7 が削除を命じているため対処しない」)は誤りであった。** 10.7 が命じているのは**当該ファイルの不在**であって被覆の放棄ではない。タスク 8.2 が「凍結スイートを触らず同ディレクトリへ新設スイートを足す」手段(`tests/player/player_stats_removal_test.gd`)を既に確立しており、対処は可能だった。
+
+**修正**: 同スイートへ 1 ケース `test_the_stat_check_reaches_an_item_the_implementation_cannot_know_by_name` を足した。`PlayerStats` を継承した内部クラス `ExtendedStats` に数値項目を 1 つ持たせ、0 を入れて `add_child(player)` が当の項目名で `push_error` することを見る。要件 10.7(削除された 7 本のパスは不在のまま)・11.9(凍結スイートに触れない)・11.11 のいずれにも抵触しない。
+
+| 手段 | 変異 | 修正前 | 修正後 |
+| -- | -- | -- | -- |
+| `player_stats_removal_test.gd` へ反射の導出を固定する 1 ケース | `_report_non_positive_stats()` を 14 項目の固定リストの走査へ | 562 cases / failures 0 / exit 0(**生存**) | 563 cases / 1 failures / exit 100(**死亡**) |
+
+素の実装での実測は **563 cases / 36 suites / 全 0 / exit 0**。既定値の側の陽性対照は凍結済みの `tests/player/player_move_test.gd`(`add_child(player)` が `is_success()`)が既に持っているため重複を置かなかった。
+
+#### 3 回目のパネルが返した DRIFT(1・2 回目からの差分のみ)
+
+1〜6 番目は 1・2 回目と同じ判定・同じ置き場で再確認された。新しく次が加わった。
+
+7. **本ファイルのタスク 3.5 の「対処しないと決めた検出力の欠陥」2 件目の根拠が誤り**(test)。上記のとおり、10.7 が凍結するのはファイルであって要件ではない。**タスク 8 の記述が正しい**。置き場: 本欄の記録と、修正コミット `0c395c8`(What の正本は `player_stats_removal_test.gd` の当該ケース)。
+8. **`tasks.md` の「タスク一覧」にタスク 9 の項目が無い**(requirements-conformance)。**Implementation Notes とコミットが正しく、台帳が不完全**。パネル指摘の修正は台帳ではなく本欄へ記す運用であることを、後続単位へ引き継ぐ。
+9. **spec.md §5.4 の「解放に `queue_free()` を使う」の理由付けが、生成側にも同じ制約が掛かることを述べていない**(runtime-smoke)。実測では解放だけでなく**生成(`add_child`)**も同じ物理サーバの走査に触れて ERROR になる。置き場: 後続 unit の spec へ置く横断規約に「生成と解放の両方」と書く。
+10. **spec.md §7 Requirement 12 の検証手順が素の起動の目視だけを指す**(runtime-smoke)。12.3 の 8 方向・12.5 の放置・12.6 の再読込は OS 入力なしには再現できず、複製へ計測シーンを足して `input_source` を差し替える必要がある。置き場: `docs/testing.md`「仮ステージを目視で確認する」へ 1 行、または後続 unit の検証手順欄。
+11. **「凍結の正本」の表の 11.3 の手段の記述より実装が強い**(structure)。表は「宣言行の完全一致 + 振る舞いのテスト」とするが、実装は `get_signal_list()` を読んで自動化している。置き場: `docs/dev/ports/mutation-discipline.md` へ「宣言の凍結は `get_signal_list()` を読む」を規律として追記する案。
+
+#### 3 回目のパネルの `[Nit]`(対応を見送ったもの)
+
+1・2 回目の `[Nit]` は据え置き。新しく次が加わった(いずれも本単位の欠陥ではないか、読みやすさの微調整)。
+
+- **`analysis_fragment_test.gd:9,95` のコメントが「別のタスク」で分解の単位を指す**(structure)。ID を含まないため中間生成物 ID の後方参照には当たらないが、単位が閉じると指す先が復元できない。同居する検査の名前へ置き換えると単体で読める。
+- **`spread_resolver_test.gd:72` だけが凍結の基点をコミットハッシュで書いている**(structure)。同形の凍結検査 2 本は「凍結時点(作業ブランチの分岐元)」と書いており、3 本のうち 1 本だけ揃っていない。
+- **`player.gd:13` のコメントが角度の値「20 度」を字面で持つ**(structure)。値の正本は `SpreadResolver.SPREAD_DEGREES` であり、角度を変えるとコメントだけが古くなる。
+- **拡散の下側の 1 発が接地時に約 33〜41px で床に消える**(runtime-smoke。弾の中心から床上面まで 14px、14 / sin20° ≒ 41px)。**仕様どおりの幾何であり本単位の欠陥ではない。人間が実機で操作して判断する事項**。
+- **`get_node(enemy_path)` が解決失敗を検査しない**(security)。解決できない `NodePath` を束縛すると `null` への property アクセスで停止する。入力は `.tscn` の `[connection] binds` という信頼境界の内側で、正しさは検査が固定しており、unit #4 の実装にも同形があった。この行に触れる後続単位で `get_node_or_null()` + 早期 return へ寄せる。
+- **`Projectile.launch()` に非有限値(NaN・INF)を渡すとガードを素通りする**(security)。実測で `frames_moved = 0`・位置不変となり射程超過の解放にも到達しない。呼び出し側は 8 方向か検証済みの単位ベクトルだけであり**到達不能**。要件 2.6 が長さによる拒否を禁じているため、入れるなら `is_finite()` の検査のみ。
+- **変異を直接当てていない受け入れ基準が 19 件残る**(test)。いずれも同一スイート内の近傍の変異が死亡しており検出力の欠落の兆候は無いが、網羅としては未実測。
