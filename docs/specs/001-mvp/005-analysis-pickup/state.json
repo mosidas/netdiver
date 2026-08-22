@@ -1,11 +1,15 @@
 {
   "workflow": "sdd",
   "unit": "analysis-pickup",
-  "state": "implementing",
+  "state": "completed",
   "approvals": {
     "spec": true,
     "tasks": true
   },
   "created": "2026-08-20",
-  "updated": "2026-08-21"
+  "updated": "2026-08-22",
+  "frozen": {
+    "spec.md": "634af6dbc5091180bce9044acd1f29e7d95f141c671d6cff62d001cd970e4cf7",
+    "tasks.md": "318fbce40229cbd1048e99283fa19031b8cf8c6543418457a8d458a4b79abd31"
+  }
 }
