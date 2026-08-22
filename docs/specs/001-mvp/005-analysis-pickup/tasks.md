@@ -519,7 +519,7 @@ spec.md が定めておらず、実装に必要なため本分解で決めた事
       - 変異で確かめる(規律): `src/player/player.gd:11` の `direction: Vector2i` を `direction: Vector2` へ変えると落ちること。`is_secondary: bool` を `int` へ変えても落ちること
     - 検証コマンド: `make test TESTS=res://tests/player`
 
-  - [ ] 8.5 断片の追加を遅らせ、テストを遅延の後の観測へ改める(C5)
+  - [x] 8.5 断片の追加を遅らせ、テストを遅延の後の観測へ改める(C5)
     _Requirements: 8.1, 8.2, 8.3_
     _Boundary: AnalysisDevStage_
     _Depends: 7.1_

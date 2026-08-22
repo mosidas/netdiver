@@ -65,6 +65,7 @@ func test_the_defeat_of_a_transferable_kind_adds_one_fragment_to_the_stage() -> 
 	var stage: AnalysisDevStage = _create_stage()
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	await _await_deferred_add()
 
 	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
 	# 個数を固定する: 「1 つ以上」だと、撃破ごとに複数を残す実装が素通りする
@@ -75,12 +76,35 @@ func test_the_defeat_of_a_transferable_kind_adds_one_fragment_to_the_stage() -> 
 	assert_object(fragments[0].get_parent()).is_same(stage)
 
 
+func test_the_handler_adds_no_fragment_inside_its_own_call() -> void:
+	# 実機では `defeated` が弾の当たり(物理コールバック)の中から届くため、ハンドラ自身の
+	# 呼び出しの中で当たり判定を持つ `Area2D` を木へ載せると、走査の最中に監視の状態を
+	# 変えることになり物理サーバが拒否する。ここではその「自分の呼び出しの中では載せない」
+	# ことを直接観測する。これが無いと、同期の追加へ戻す変更が落ちない
+	var stage: AnalysisDevStage = _create_stage()
+	var children_before: int = stage.get_child_count()
+
+	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+
+	assert_array(_fragments_in_the_whole_tree()).is_empty()
+	assert_int(stage.get_child_count()).is_equal(children_before)
+
+	await _await_deferred_add()
+
+	# 遅らせただけで出ないわけではないことを対で見る: 片側だけだと、断片を一切生成しない
+	# 実装が素通りする
+	assert_array(_fragments_in_the_whole_tree()).has_size(1)
+	assert_int(stage.get_child_count()).is_equal(children_before + 1)
+
+
 func test_the_defeat_of_a_non_transferable_kind_adds_no_fragment() -> void:
 	# 写せない種別では断片が出ないこと自体が「この敵からは写せない」ことの表出である
 	var stage: AnalysisDevStage = _create_stage()
 	var children_before: int = stage.get_child_count()
 
 	stage._on_enemy_defeated(NON_TRANSFERABLE_KIND, ENEMY_PATH)
+	# 遅延の後まで見る: 同期の時点だけを見ると、遅れて出る実装を「出ない」と誤って読む
+	await _await_deferred_add()
 
 	assert_array(_fragments_in_the_whole_tree()).is_empty()
 	assert_int(stage.get_child_count()).is_equal(children_before)
@@ -94,6 +118,7 @@ func test_the_fragment_appears_at_the_global_position_of_the_defeated_enemy() ->
 	assert_vector(enemy.global_position).is_not_equal(enemy.position)
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	await _await_deferred_add()
 
 	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
 	assert_array(fragments).has_size(1)
@@ -111,6 +136,7 @@ func test_the_fragment_of_the_first_enemy_appears_at_that_instance() -> void:
 	assert_vector(enemy.global_position).is_not_equal(other.global_position)
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	await _await_deferred_add()
 
 	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
 	assert_array(fragments).has_size(1)
@@ -126,6 +152,7 @@ func test_the_fragment_of_the_second_enemy_appears_at_that_instance() -> void:
 	var other: Node2D = stage.get_node(OTHER_ENEMY_PATH)
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, OTHER_ENEMY_PATH)
+	await _await_deferred_add()
 
 	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
 	assert_array(fragments).has_size(1)
@@ -135,11 +162,33 @@ func test_the_fragment_of_the_second_enemy_appears_at_that_instance() -> void:
 	assert_vector(fragments[0].global_position).is_not_equal(enemy.global_position)
 
 
+# 位置は撃破の時点で読む。撃破された敵は `defeated` の直後に `queue_free()` されるため、
+# 遅らせた先で同じ相手を解決できる保証が無い(解放の時期と遅延した呼び出しの時期の
+# 前後関係はエンジンの実装の詳細であり、契約ではない)。ここでは撃破の直後に敵を木から
+# 外し、`NodePath` を遅延の中で解決し直す実装が落ちることを見る
+func test_the_fragment_appears_at_the_position_read_when_the_defeat_arrived() -> void:
+	var stage: AnalysisDevStage = _create_stage()
+	var enemy: Node2D = stage.get_node(ENEMY_PATH)
+	var at: Vector2 = enemy.global_position
+
+	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	stage.remove_child(enemy)
+	await _await_deferred_add()
+
+	assert_bool(stage.has_node(ENEMY_PATH)).is_false()
+	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
+	assert_array(fragments).has_size(1)
+	if fragments.size() != 1:
+		return
+	assert_vector(fragments[0].global_position).is_equal_approx(at, TOLERANCE)
+
+
 func test_the_fragment_outlives_the_defeated_enemy() -> void:
 	var stage: AnalysisDevStage = _create_stage()
 	var enemy: Node2D = stage.get_node(ENEMY_PATH)
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	await _await_deferred_add()
 
 	var fragments: Array[AnalysisFragment] = _fragments_in_the_whole_tree()
 	assert_array(fragments).has_size(1)
@@ -164,6 +213,7 @@ func test_a_transferable_defeat_without_a_fragment_scene_pushes_an_error() -> vo
 
 	var defeat: Callable = func() -> void: stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
 	await assert_error(defeat).is_push_error(MISSING_FRAGMENT_SCENE_ERROR)
+	await _await_deferred_add()
 
 	assert_int(stage.get_child_count()).is_equal(children_before)
 	assert_array(_fragments_in_the_whole_tree()).is_empty()
@@ -179,6 +229,7 @@ func test_a_non_transferable_defeat_without_a_fragment_scene_pushes_no_error() -
 		func() -> void: stage._on_enemy_defeated(NON_TRANSFERABLE_KIND, ENEMY_PATH)
 	)
 	await assert_error(defeat).is_success()
+	await _await_deferred_add()
 
 	assert_int(stage.get_child_count()).is_equal(children_before)
 	assert_array(_fragments_in_the_whole_tree()).is_empty()
@@ -191,6 +242,7 @@ func test_a_transferable_defeat_calls_nothing_on_the_player() -> void:
 	var player: Player = stage.get_node(NodePath(PLAYER_NAME))
 
 	stage._on_enemy_defeated(TRANSFERABLE_KIND, ENEMY_PATH)
+	await _await_deferred_add()
 
 	# 断片が出ていること。出ていなければ「呼ばれない」は空振りの緑になる
 	assert_array(_fragments_in_the_whole_tree()).has_size(1)
@@ -241,6 +293,13 @@ func test_the_handler_runs_no_reload_inside_its_own_call() -> void:
 	# `ERROR: Parameter "current_scene" is null.` が 1 件出る。**これは正常である**
 	var die: Callable = func() -> void: stage._on_player_died()
 	await assert_error(die).is_success()
+
+
+# 遅らせた追加が済むまで待つ。ハンドラは追加を `call_deferred` へ回すため、呼び出しの直後の
+# 木にはまだ断片が無い。実機の `defeated` は物理コールバックの最中に届き、そこで当たり判定を
+# 持つ `Area2D` を木へ載せると物理サーバの走査を壊すためである
+func _await_deferred_add() -> void:
+	await await_idle_frame()
 
 
 func _create_stage(with_fragment_scene: bool = true) -> AnalysisDevStage:
