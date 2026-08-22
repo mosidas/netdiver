@@ -1159,3 +1159,68 @@ spec.md §8 が定める反映先 3 つの確認結果:
 - **静的な走査には空振りの検査を 2 段で足す。** 走査が届いていること(ディレクトリごとの錨)と、必ず見つかる語が見つかること(陽性対照)。総数だけを見ると、再帰が途中で止まっていても緑になる。
 - **GDScript のシグナルは宣言型を発火時に強制しない。** 宣言の凍結は `get_signal_list()` の `args` を読むほかない。振る舞い側のケースをいくら足しても宣言の退行は捕らえられない。
 - **実行時のエラーは headless でも観測できることがある。** 物理サーバ・レンダリングサーバのうち、物理サーバ由来のものは `--headless` で再現する。GUI と台本入力と画面の保存が要るのは、見え方(色・配置)を確かめるときだけである。
+
+### 最終検証パネルの再実行(2026-08-22、2 回目)— **NO-GO**
+
+事前ゲート(dev-implement 14.1)は通過している。全 24 サブタスクが `[x]`、`_Blocked:` なし、`check.py` が **error 0 / warning 5**(行数超過 3 + 1 回目の記録の本文に現れる `UNVERIFIED` の語 2)。パネル実行前の `make test` は **562 cases / 36 suites / errors 0 / failures 0 / flaky 0 / skipped 0 / orphans 0 / exit 0**。
+
+| 観点 | 実行場所 | VERDICT | Critical | UNVERIFIED | 1 回目からの変化 |
+| ---- | ---- | ---- | ---- | ---- | ---- |
+| requirements-conformance | 隔離複製 `/tmp/nv-panel2/reqconf` | APPROVED | 0 | なし | 据え置き |
+| security | 隔離複製 `/tmp/nv-panel2/security` | APPROVED | 0 | なし | 据え置き |
+| **test** | 隔離複製 `/tmp/nv-panel2/test` | **APPROVED** | **0** | なし | **REJECTED / 4 → APPROVED / 0** |
+| **runtime-smoke** | 隔離複製 `/tmp/nv-panel2/runtime` | **APPROVED** | **0** | なし | **REJECTED / 1 → APPROVED / 0** |
+| **structure** | 隔離複製 `/tmp/nv-panel2/structure` | **REJECTED** | **2** | なし | **APPROVED / 0 → REJECTED / 2** |
+
+**merge の判定**: 1 観点でも `REJECTED` なら全体 NO-GO により **NO-GO**。`UNVERIFIED` はどの観点も「なし」であり、欠陥起因である。**1 回目の Critical 5 件はすべて閉じた**が、structure が新しく 2 件を返した。
+
+#### 1 回目の Critical 5 件の解消(独立の実測)
+
+- **C1(3.9)**: test 観点が `_remaining_uses` を足す変異で `player_upgrade_test` の 2 ケースが落ちることを実測。requirements-conformance も独立に同じ変異で死亡を実測。
+- **C2(10.4・10.5・10.6)**: `@export var burst_budget: int = 3` の変異で死亡。走査の空振りは `analysis_dev_stage.tscn` へ `metadata/ability_slot` を注入する変異で否定された(`.tscn` とサブディレクトリまで走査が届いている)。
+- **C3(2.6)**: `is_zero_approx()` へ緩める変異で死亡。
+- **C4(11.3)**: 宣言型を `Vector2` へ変える変異で死亡。
+- **C5(実行時の ERROR)**: runtime-smoke が隔離複製で仮ステージを **12 回起動(headless 7 / GUI 5)し、全回 `^ERROR` 0 件**。あわせて**自分で同期の `add_child()` へ戻す陽性対照**を注入し、その場合に 1 件が出ることを確認した(計測の空振りではない)。
+
+#### 変異検査の実測(test 観点 / 70 件 — 死亡 67・生存 3)
+
+1 回目は 30 件 / 死亡 25・生存 5 であった。生存 3 件はいずれも等価変異であり、うち 2 件は**到達不能を実行時のプローブで立証**している。
+
+- **M03(5.7)**: `is_secondary and _is_primary_upgraded` → `_is_primary_upgraded`。同じ位置へ `push_error("UNREACHABLE PROBE")` を仕込むと 1 行も出力されず、`_spawn_projectile(..., is_secondary=false)` が強化中に到達しないことを実測。1 回目の申告(等価)が裏づけられた。
+- **M13(1.11)**: `EIGHT_DIRECTIONS.has(direction)` → `absi(x) >= 2 or absi(y) >= 2 or direction == Vector2i.ZERO`。受理する引数の集合が完全に同一。真に境界を緩める M14 は死亡する。
+- **M57(7.16)**: 接触時に `Engine.time_scale = 0.5` を書く。テストが置く `OTHER_TIME_SCALE` と値が偶然一致するための観測上の等価であり、別の値を書く M58 は死亡する([Nit] として記録)。
+
+#### structure が返した Critical 2 件(未対応)
+
+**S1(structure)— 理由コメントが別の定数へ付け替わっている。**
+`tests/player/player_upgrade_test.gd:58-69`。58-61 行は `PLAYER_SCRIPT_VARIABLES`(71 行)を説明する記述だが、62-64 行(`fired` の引数の説明)が空行を挟まずに続き、そのまま 65 行の `FROZEN_FIRED_ARGUMENTS` へ接続している。結果、`FROZEN_FIRED_ARGUMENTS` には別の定数の理由が付き、`PLAYER_SCRIPT_VARIABLES` は理由コメントを持たない。
+**原因は本ターンのコミット `ca1c92b`(タスク 8.4)である。** `e192d82`(タスク 8.1)が置いたコメントと定数の**あいだへ**自分の定数を挿入した。**本ターンが持ち込んだ後退であり、指摘は正しい。**
+修正手段は明らか: 58-61 行を 71 行の直上へ移し、62-64 行だけを `FROZEN_FIRED_ARGUMENTS` に残す。
+
+**S2(structure)— 中間生成物の ID がコードコメントに残る。**
+`tests/player/player_upgrade_test.gd:21` の `# `PlayerCommand` の項目数(要件 3.8)。…`。`dev-implement` 13. の「コードに中間生成物の ID を残さない(厳守)」に文面上あたる。同種の後方参照(節番号・unit 番号)が `spread_resolver_test.gd:199`・`analysis_fragment_scene_test.gd:72`・`player_upgrade_test.gd:235`・`analysis_dev_stage_scene_test.gd:422` にもある。
+**この 5 行はいずれも本ターンより前に入っている**(`要件 3.8` の行はコミット `5521cef` = タスク 5.1)。**1 回目のパネルの structure は同じ 5 箇所を `[Nit]` と判定し、「基線 `01c1d0e` の凍結済みファイルに同形が 16 件あり、既存の慣行の継続であって本単位が持ち込んだ後退ではない」と述べていた。** 2 回目は同じ対象を `[Critical]` へ引き上げた。基線側の同形は 11 ファイルに実在し、そのうち `src/enemy/charger_enemy.gd`・`tests/player/player_input_test.gd`・`tests/enemy/shooter_enemy_test.gd`・`tests/stage/enemy_dev_stage_test.gd`・`tests/weapon/combat_limits_test.gd`・`tests/weapon/enemy_projectile_test.gd`・`tests/enemy/charger_enemy_test.gd` は**要件 11.9 が変更を禁じている**(本単位では直せない)。
+**2 体の判定が割れており、規律の適用範囲(新規コードだけに掛けるのか、凍結側との一貫性を優先するのか)は人間の判断領域である。**
+
+**打ち切りの根拠**: 人間が定めた再実行の規則は「修正手段が明らかで、かつ 1 件だけなら修正して再実行してよい。2 件以上、または修正手段が未確定なら停止して報告する」である。**Critical は 2 件**であるため、修正せずに停止して報告する。
+
+#### 2 回目のパネルが返した DRIFT(1 回目からの差分のみ)
+
+1 回目に記録した 4 件のうち **4 番目(spec.md §5.6 と要件 8.1・8.3 が同期の `add_child()` を要求しているように読める)は、3 観点(requirements-conformance・test・runtime-smoke・structure の 4 体すべて)が独立に「実装が正しい」と判定した。**置き場は既に反映済みである — (a) `analysis_dev_stage.gd` の `_place_fragment()` の doc コメント(Why not の正本)、(b) `tests/stage/analysis_dev_stage_test.gd` の遅延後の観測と「自分の呼び出しの中では増えない」ケース(What の正本)。**凍結済みの spec.md は書き換えない。**追加の置き場の候補として、後続 unit の spec へ「当たり判定を持つノードの生成は物理コールバックの外へ回す」を横断の規約として書くことが 3 体から提案された。
+
+1〜3 番目(`launch()` の型・`ZERO_DIRECTION_ERROR` の文言・「変更してよい既存ファイル」の定義)は 1 回目と同じ判定・同じ置き場で再確認された。新しく 2 件が加わった。
+
+5. **spec.md §6.7「ファイルの配置」の一覧に、実在する新設テスト 3 本が載っていない**(`player_secondary_tint_test.gd`・`projectile_direction_test.gd`・`player_stats_removal_test.gd`)。**実装が正しい**。§6.7 自身が「File Structure Plan はここで定めない(タスク分解の責務)」と述べており網羅を主張していない。置き場: `tasks.md` の各サブタスクの「対象ファイル」欄(記載済み)。追加の対処は不要。
+6. **`tasks.md` 冒頭の File Structure Plan に `tests/player/player_stats_removal_test.gd` が載っていない**。**タスク 8.2 の記述が正しい**(FSP はタスク 8 系の追加より前に書かれた表である)。置き場: 本欄の記録に留め、後続単位が FSP を参照するときの前提として引き継ぐ。
+
+#### 2 回目のパネルの `[Nit]`(対応を見送ったもの)
+
+1 回目の `[Nit]` は据え置き(`PICKUP_SYMBOLS` の死んだ検査、8.5 の静的検査への片寄り、`_spawn_spread()` の早期 return、`EIGHT_DIRECTIONS` の公開、`auto_free()` の体裁、行数の warning 3 件、断片の 8×8、gdUnit4 の取得と CI)。新しく次が加わった。
+
+- **`analysis_fragment_test::test_taking_the_fragment_leaves_the_time_scale_untouched` の検出力が値に依存する**(test)。接触処理へ `Engine.time_scale = 0.5` を書く変異は、テストが置く `OTHER_TIME_SCALE` と値が一致するため生存する(0.25 を書く変異は死亡)。`paused` 側は既定・非既定の両側で接触させており、`time_scale` 側だけがその形を持たない。
+- **`player_stats_removal_test.gd` の命名と凝集**(structure)。`removal` は対象の側面ではなく本作業単位の作業内容を指し、単位が閉じると名前から意味が失われる。また後半 2 ケースの対象は `player_stats.gd` ではなく `src/` 全体であり、`tests/player/` に置く根拠が後半には無い。
+- **`test_the_scan_reaches_every_source_directory` の名前と実体のずれ**(structure)。実体は `SCAN_ANCHORS` の 7 パスを含むことの検査であり、`src/` に新しいサブディレクトリが増えても錨は自動では増えない。
+- **`fragment_scene == null` のガードと `fragment_scene.instantiate()` が別関数・別フレームに分かれた**(structure)。現在の配線では到達しないが、`_place_fragment()` の doc に「未設定の判定は呼び出し元が済ませている」を 1 行足すと責務の境界が閉じる。
+- **`analysis_dev_stage.gd` のコメント記号の不揃い**(structure)。非公開のシグナルハンドラのうち `_on_enemy_defeated()` だけが `##`、`_place_fragment()` と `_on_player_died()` は `#`。
+- **`AnalysisFragment` の `has_method(&"grant_upgrade")` が引数の数を見ない**(security)。同名で引数を要求するメソッドを持つ body が player レイヤへ載ると引数不足のエンジンエラーになる。現在 player レイヤに載るのは `player.tscn` だけであり悪用経路は無い。
+- **`_source_paths_under()` の再帰に深さの上限とリンクの巡回検出が無い**(security)。`src/`・`tests/` にシンボリックリンクは 0 件であることを実測済み。
